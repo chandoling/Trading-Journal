@@ -84,12 +84,13 @@ else
   warn "pm2 가 없습니다 — Node.js 설치 후 'npm install -g pm2' (권장)"
   cat <<EOF
 
-pm2 없이 바로 써 보려면 (터미널 6개, 각각 켜 두기):
+pm2 없이 바로 써 보려면 (터미널 여러 개, 각각 켜 두기 — 쓰지 않는 체인 수집기는 빼도 돼요):
   $PY src/unit_runner.py web
   $PY src/unit_runner.py core
   $PY src/unit_runner.py evm
   $PY src/unit_runner.py sol
   $PY src/unit_runner.py bsc
+  $PY src/unit_runner.py tron         # Tron·Sui·TON·Bitcoin 지갑을 넣을 때(sui · ton · btc 도 같은 식 · 지갑이 없으면 대기)
   $PY src/alert_bot.py              # 상태 점검·원장 경고(텔레그램 연결 전에도 화면 상태 패널을 채움 — 권장)
   # (선택) 거래소: $PY src/upbit_link.py  ·  $PY src/ex_foreign.py
 그리고 http://127.0.0.1:${PORT}/ 을 여세요. 첫 비밀번호 화면의 설정 코드 = cat state/auth_setup_code

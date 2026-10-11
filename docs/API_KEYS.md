@@ -4,7 +4,7 @@ tj-bot 은 **무료 키와 공개 노드만으로** 돌아가게 짜여 있어�
 나머지 키는 더 빨리·더 넓게 받게 해 줄 뿐이고, 탐색기·시세·노드 키는 공표 한도의 80% 를 기준으로 몫을 정해 천천히 부릅니다.
 모든 키는 저장할 때 읽기 전용 1콜로 연결을 확인해요 — 서비스가 키를 거부하면(401·403) 저장하지 않고, 연결이 안 되면(시간 초과 등) 저장한 뒤 경고만 띄워요.
 키는 웹 **설정 › 연결·키** 에 붙여 넣으면 `.env`(권한 600)에 저장되고, 화면에는 •••• 로만 보입니다(거래소 공개 API 키만 끝 4자리).
-키 값은 로그·상태 파일·화면 응답·`config.json` 어디에도 남기지 않습니다 — 코인게코·오픈시·거래소 키는 요청 헤더로 보내고(거래소는 서명), Helius·Etherscan 키와 노드 키(Alchemy·Ankr·NodeReal·QuickNode)는
+키 값은 로그·상태 파일·화면 응답·`config.json` 어디에도 남기지 않습니다 — 코인게코·오픈시·거래소 키는 요청 헤더로 보내고(거래소는 서명), Helius·Etherscan 키와 노드 키(Alchemy·Ankr·NodeReal·QuickNode·Chainnodes)는
 서비스가 정한 대로 요청 주소(쿼리 `api-key`·`apikey` · 경로) 안에 넣되 그 주소는 메모리에서만 만들고 오류·로그·상태 패널에는 호스트 이름만 남깁니다(텔레그램 봇 토큰도 같은 방식).
 
 | 키(`.env` 이름) | 꼭 필요? | 무료? | 어디에 쓰나 | 없으면 |
@@ -15,7 +15,10 @@ tj-bot 은 **무료 키와 공개 노드만으로** 돌아가게 짜여 있어�
 | `TJ_ANKR_KEY` | EVM 지갑이 있으면 **필수**(경고만 · 막지는 않음) | 무료 Freemium | 오래 안 쓴 지갑에 들어온 토큰 10분마다 확인 · BNB Chain·Base 옛 기록(아카이브) 가속 · BNB Chain 에 남이 그냥 보낸 BNB 찾기(옛 블록 잔고) · 토큰 찾기 보조(Advanced API) | 무료 공개 노드로만 — 늦을 수 있어요(1시간 확인이 받쳐 줌) |
 | `TJ_COINGECKO_KEY` | 선택 | Demo 무료 · Pro 유료 | 코인게코 시세 · DEX 토큰 시세 · 원가·차트 시세 · NFT 바닥가 | 전부 무키(공용 무료 한도)로 — 느리고 막히기 쉬워요 |
 | `TJ_OPENSEA_KEY` | 선택 | 무료 신청 | EVM NFT 바닥가 최우선 출처 | 코인게코 NFT 로 |
-| `TJ_NODEREAL_KEY` · `TJ_QUICKNODE_KEY` | 선택 | NodeReal 무료 키 · QuickNode 멀티체인 엔드포인트 주소 하나(무료 플랜도 됨 — 월 크레딧·초당 15 의 80% · 유료 기본 80% · Base 내부 이동 trace + 남는 몫으로 옛 잔고 · getLogs 엔 안 씀 · 저장 확인 = Base 1콜 · 연결 시험 = Base trace 1건) | BNB Chain·Base 옛 기록(아카이브) 노드 — 무료 키는 월 한도의 80%(백필 때 실시간 몫을 남기고 하루 몫의 최대 10배까지 당겨 씀 · 최근 31일 합 80% 안), 유료는 사용 비율(기본 10% · QuickNode 80%) 안에서만 | 공개 노드로 — BNB Chain 은 공개 노드 보관 기간까지만 |
+| `TJ_NODEREAL_KEY` · `TJ_QUICKNODE_KEY` | 선택 | NodeReal 무료 키 · QuickNode 멀티체인 엔드포인트 주소 하나(유료 요금제나 1개월 무료 체험 키가 있으면 — 상시 무료 없음 · 체험이 끝나면 유료로 바꾸거나 키 지우기 · 계속 거부되면 봇이 알아서 빼고 기본 노드로 · 한도의 80%(유료 비율 기본 80%) · Base 내부 이동 trace + 남는 몫으로 옛 잔고 · getLogs 엔 안 씀) | BNB Chain·Base 옛 기록(아카이브) 노드 — 무료 키는 월 한도의 80%(백필 때 실시간 몫을 남기고 하루 몫의 최대 10배까지 당겨 씀 · 최근 31일 합 80% 안), 유료는 사용 비율(기본 10% · QuickNode 80%) 안에서만 | 공개 노드로 — BNB Chain 은 공개 노드 보관 기간까지만 |
+| `TJ_CHAINNODES_KEY` | 선택 | Chainnodes 무료 Core API 키(월 1,250만 요청·초당 25 · 8-4-4-4-12 형식 · Base 주소를 넣으면 키만 저장) | Base 거래의 내부 이동 확인(trace)에 먼저 — 로그·잔고엔 안 씀 · 순서 Chainnodes → QuickNode → 기본 노드 · 최근 약 45일보다 옛 거래·한도 동안은 다음 노드 · 월 한도의 80% | QuickNode(키 있으면) → 기본 노드로 |
+| `TJ_TRONGRID_KEY` | 선택(Tron 지갑이 있으면 권장) | 무료 가입 | Tron 지갑 수집·잔고 대조(TronGrid — 헤더로만 보냄 · 초당 4회 · 하루 공표 한도의 80% 안) | 공용 무키 초당 0.8회 — 옛 기록이 느려요 |
+| `TJ_TONCENTER_KEY` | 선택(TON 지갑이 있으면 권장) | 무료 | TON 지갑 수집·잔고 대조(toncenter v3 — 헤더로만 · 초당 8회 = 무료 10회의 80%) | 공용 무키 초당 1회 |
 | 거래소 키(업비트·빗썸·바이낸스·바이빗·OKX·쿠코인·게이트) | 선택 | 무료 | 그 거래소 잔고·체결·입출금 | 그 거래소는 안 받아요 |
 | `TJ_TG_TOKEN` · `TJ_TG_CHAT` | 선택 | 무료 | 텔레그램 알림 | 알림 없이 화면만 |
 
@@ -66,6 +69,9 @@ tj-bot 은 **무료 키와 공개 노드만으로** 돌아가게 짜여 있어�
 
 - **지갑이 한 번이라도 주고받은 토큰 전부 + 지금 잔고 찾기**(`alchemy_getTokenBalances`) — 오래 들고만 있던 토큰처럼 최근 거래 기록에 안 보이는 보유를 빠뜨리지 않게 합니다.
   Base·Ethereum·Arbitrum·Optimism·Polygon 등 Alchemy 가 지원하는 EVM 체인. 무료 탐색기 색인이 막힌 체인(예: Base)에서 특히 필요해요.
+- **Base 옛 거래의 내부 ETH 이동 보완**(`alchemy_getAssetTransfers` 내부 이동 목록 — 무료 등급 포함 · 한 블록 1콜 120 CU): 추적(trace) 노드가 모두 못 준 거래·블록만
+  (Chainnodes 무료 이력 밖 · 키 없는 drpc 무거운 거래 시간 초과 · 1시간 넘은 블록 · 30일 넘었거나 나중 몫으로 2번 넘게 실패) 묻습니다 — 실시간 감시에는 안 씁니다.
+  없으면 그런 옛 거래는 가벼운 거래만 채워지고 나머지는 총액만 잔고 대조로 맞아요.
 - **감시·옛 기록(백필)은 늘 무료 노드가 먼저입니다.** Alchemy 는 무료 경로가 없거나 너무 느린 곳의 보조로만 씁니다
   (무료 등급의 `eth_getLogs` 는 요청당 10블록이라 큰 백필에는 쓰지 않아요).
 - 처음 한 번은 등록 지갑 × 체인을 전부 확인하고, 그 뒤에는 무료 신호(무료 노드의 nonce·잔고·새 거래)로 움직임이 보인 (지갑, 체인)만 다시 묻습니다 —
@@ -190,7 +196,7 @@ a key the service refuses (401/403) is not saved; a connection failure saves it 
 Paste keys in **Settings › Connections & keys**; they are stored in `.env` (mode 600), shown masked, and never written to `config.json`, state files or
 screen responses; URLs in error messages, logs and the status panel are reduced to the host name. Each key is sent the way its service requires: request headers
 for exchanges (signed), CoinGecko and OpenSea; the URL key parameter for Helius (`api-key`) and Etherscan (`apikey`); the URL path for the Telegram bot token;
-and the endpoint URL for the node keys (`TJ_ALCHEMY_KEY`, `TJ_NODEREAL_KEY`, `TJ_ANKR_KEY`, `TJ_QUICKNODE_KEY` — one multichain endpoint; per-chain URLs are derived from its name and token). URLs that carry a key
+and the endpoint URL for the node keys (`TJ_ALCHEMY_KEY`, `TJ_NODEREAL_KEY`, `TJ_ANKR_KEY`, `TJ_QUICKNODE_KEY` — one multichain endpoint; per-chain URLs are derived from its name and token; `TJ_CHAINNODES_KEY` — Base trace only). URLs that carry a key
 are built in memory only.
 
 - **Helius** (`TJ_HELIUS_KEY`, free plan — https://dashboard.helius.dev): Solana history, tokens and NFT discovery, and backup for new-transaction
@@ -208,6 +214,10 @@ are built in memory only.
   balances (`alchemy_getTokenBalances`) so long-held tokens are not missed. Watching and backfill stay on free nodes; Alchemy only helps where no free
   path exists. One full pass at first, then only (wallet, chain) pairs that free signals show as changed. Metered with the official CU table under a
   daily share of 80% of the monthly limit (and 80% of the per-second limit); the key is read on every call, so saving it needs no restart.
+  On Base it also fills **internal ETH transfers of old transactions** that every trace node failed to return (free Chainnodes history ends after ~30-45 days;
+  keyless drpc times out on heavy transactions): only blocks older than 1 hour, and only when all trace nodes said the history is gone, the block is older
+  than 30 days, or the deferred retry failed twice — one `alchemy_getAssetTransfers` call (category `internal`, 120 CU) per block, never for live polling.
+  Without the key those transactions keep only light traces (drpc) and the totals are matched by balance reconciliation.
 - **Ankr** (`TJ_ANKR_KEY`, free Freemium — https://www.ankr.com/rpc/ — required for EVM wallets: 10-minute incoming-token checks for idle wallets)
   and **NodeReal** (`TJ_NODEREAL_KEY`): faster BSC/Base archive backfill and old-block balances for the BNB Chain balance watch (finds plain BNB sent to you
   or paid out by contracts — a few dozen calls per deposit, daily cap, zero calls otherwise; without a key only recent blocks are scanned); the
@@ -218,10 +228,12 @@ are built in memory only.
   Ankr also runs the 10-minute "tokens received by resting wallets" check (one batched `eth_getLogs` per chain, recipient topic = your wallets;
   public nodes when the key is missing or the chain is not open on the free plan; never Alchemy — its free getLogs is capped at 10 blocks).
   Config `addr_tier.inflow_sec` (default 600, 0 = off).
-- **QuickNode** (`TJ_QUICKNODE_KEY`, optional, free plan works — https://dashboard.quicknode.com): paste one multichain endpoint URL (any chain); per-chain
-  URLs are derived from it. Used only for what it does well: Base internal-transfer traces (with the key set, Base tracing uses this key alone and waits on
-  failure or when the share runs out) and, with what is left, old BNB Chain/Base balance and nonce checks — never for getLogs (the free plan allows 5 blocks).
-  Free plan = 80% of the monthly credits and of 15 requests/s; paid default share 80%. Saving checks one Base call; the connection test traces one recent Base
+- **QuickNode** (`TJ_QUICKNODE_KEY`, optional — a paid plan or the 1-month free trial; there is no permanent free plan — https://dashboard.quicknode.com):
+  paste one multichain endpoint URL (any chain); per-chain URLs are derived from it. Used only for what it does well: Base internal-transfer traces
+  (order: your `trace_rpcs` → Chainnodes → QuickNode → default nodes; a rate limit or missing old history falls through to the next node in the same call)
+  and, with what is left, old BNB Chain/Base balance and nonce checks — never for getLogs (5 blocks on the trial). If the key keeps being refused
+  (e.g. the trial ended), the bot drops it per chain and falls back to the default nodes (run the connection test or change the key to use it again).
+  Trial = 80% of its credits and of 15 requests/s; paid default share 80%. Saving checks one Base call; the connection test traces one recent Base
   transaction. Older per-chain fields (`TJ_QUICKNODE_BSC_KEY`, `TJ_QUICKNODE_BASE_KEY`) are read only while the multichain field is empty.
 - **Catch-up burst** (free keys only — Alchemy, Ankr, NodeReal, QuickNode, Helius): backfill and first full passes may use up to 10x the normal daily share
   (ten days' worth). The real-time load measured in the ledger (busiest of the last 7 days, or today's pace) x 1.5 is reserved first for the rest of
@@ -242,4 +254,7 @@ are built in memory only.
 - **OpenSea** (`TJ_OPENSEA_KEY`, free application — https://docs.opensea.io/reference/api-keys): first source for EVM NFT floors.
 - **Exchanges**: read-only keys with an IP whitelist only; keys with trade/withdraw/transfer permissions are refused where the exchange lets us check.
   Binance, Bybit and OKX keys also feed futures PnL and the futures-receipt entry/exit prices (no extra permission).
+- **TronGrid / toncenter** (`TJ_TRONGRID_KEY`, `TJ_TONCENTER_KEY`, free, optional — put them in `.env`): faster Tron / TON wallet collection and
+  balance checks (sent as a request header only; Tron 4 req/s and 80% of the published daily limit, TON 8 req/s = 80% of the free 10 req/s). Without them
+  the public keyless endpoints are used (Tron 0.8 req/s, TON 1 req/s — old history fills slowly). Sui (public GraphQL) and Bitcoin (public Esplora) need no key.
 - **Telegram** (`TJ_TG_TOKEN`, `TJ_TG_CHAT`): create a bot with @BotFather; the setup wizard fills the chat id.

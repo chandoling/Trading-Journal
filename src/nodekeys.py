@@ -19,6 +19,8 @@ PROVIDERS = {
     "ankr": {"name": "Ankr", "unit": "cu", "free_month": 200_000_000, "cu": 200, "cu_prefix": {"ankr_": 700}, "hosts": ["rpc.ankr.com"], "paid_only": False},
     "quicknode": {"name": "QuickNode", "unit": "cu", "free_month": 10_000_000, "cu": 20, "cu_heavy": 40, "hosts": ["*.quiknode.pro"], "paid_only": False,
                   "paid_share": 80, "no_logs": True},
+    "chainnodes": {"name": "Chainnodes", "unit": "calls", "free_month": 12_500_000, "hosts": ["*.chainnodes.org"], "paid_only": False,
+                   "pool": False, "no_logs": True, "trace_only": True},
     "alchemy": {"name": "Alchemy", "unit": "cu", "free_month": 30_000_000, "cu": 26, "cu_heavy": 80,
                 "cu_methods": {"alchemy_getTokenBalances": 20, "alchemy_getTokenMetadata": 10, "eth_call": 26, "eth_getBalance": 20,
                                "eth_getLogs": 60, "alchemy_getAssetTransfers": 120, "eth_blockNumber": 10, "eth_getTransactionCount": 20,
@@ -32,9 +34,15 @@ PAID_HOST_POLICY = {
 FREE_HOST_POLICY = {
     "quicknode": {"*.quiknode.pro": {"call_rate": 6.0, "call_burst": 6, "share_rate": 6.0, "share_burst": 6}},
 }
-UNIT_KO = {"nodereal": "CU", "ankr": "크레딧", "quicknode": "크레딧", "alchemy": "CU"}
+CN_HOST_POLICY = {"*.chainnodes.org": {"rate": 2.0, "burst": 2, "conc": 1, "call_rate": 2.0, "call_burst": 2,
+                                       "share": "node_chainnodes", "share_rate": 2.0, "share_burst": 2, "share_xproc": True}}
+UNIT_KO = {"nodereal": "CU", "ankr": "크레딧", "quicknode": "크레딧", "alchemy": "CU", "chainnodes": "요청"}
 ENV_NODEREAL = "TJ_NODEREAL_KEY"
 ENV_ANKR = "TJ_ANKR_KEY"
+ENV_CN = "TJ_CHAINNODES_KEY"
+CN_KEY_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+CN_HOST_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\.chainnodes\.org$")
+CN_BASE = "https://base-mainnet.chainnodes.org/"
 ENV_ALCHEMY = "TJ_ALCHEMY_KEY"
 HOT_KEYS = ("alchemy",)
 NET_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
@@ -50,7 +58,7 @@ SPAN = {"nodereal": 50000, "ankr": 3000, "quicknode": 10000}
 
 def _env() -> dict:
     out = common.read_env_file()
-    for k in (ENV_NODEREAL, ENV_ANKR, ENV_QN, ENV_QN_BSC, ENV_QN_BASE, ENV_ALCHEMY):
+    for k in (ENV_NODEREAL, ENV_ANKR, ENV_QN, ENV_QN_BSC, ENV_QN_BASE, ENV_ALCHEMY, ENV_CN):
         if os.environ.get(k):
             out[k] = os.environ[k]
     return out
@@ -140,7 +148,223 @@ def qn_multi(env: dict) -> bool:
     return bool(str((env or {}).get(ENV_QN) or "").strip())
 
 
-def urls(env: dict = None) -> dict:
+QN_REJECT_FILE = "qn_reject.json"
+QN_REJECT_N = 3
+QN_REJECT_SEC = 120
+QN_REJECT_HTTP = (401, 402, 403, 404)
+_QN_REJECT_TXT = re.compile(
+    r"credits?\b.{0,40}?(exhaust|exceed|insufficient|run out|ran out|depleted|used up|no (?:more|remaining))"
+    r"|(exhaust|exceed|insufficient|run out|ran out|out of|depleted|used up|no remaining)\w*.{0,40}?\bcredits?\b"
+    r"|payment required|\b(trial|subscription)\b.{0,30}?\b(expired|ended|inactive|cancel)", re.I | re.S)
+_QN_SLOT = {"at": -1e18, "kh": None, "hosts": {}}
+QN_SLOT_TTL = 60.0
+
+
+def _qn_path() -> str:
+    return os.path.join(common.quota_dir(), QN_REJECT_FILE)
+
+
+def _host(u: str) -> str:
+    try:
+        return (urllib.parse.urlsplit(str(u)).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def qn_hosts(env: dict = None) -> dict:
+    us = urls(_env() if env is None else env, all_qn=True)
+    return {_host(u): c for c in ("bsc", "base") for p, u in us.get(c, []) if p == "quicknode" and _host(u)}
+
+
+def qn_kh(env: dict = None):
+    import hashlib
+    us = urls(_env() if env is None else env, all_qn=True)
+    got = sorted(u for c in ("bsc", "base") for p, u in us.get(c, []) if p == "quicknode")
+    return hashlib.sha256("|".join(got).encode()).hexdigest()[:12] if got else None
+
+
+def _qn_slot():
+    import time as _t
+    now = _t.monotonic()
+    if now - _QN_SLOT["at"] > QN_SLOT_TTL:
+        try:
+            env = _env()
+            _QN_SLOT.update(at=now, kh=qn_kh(env), hosts=qn_hosts(env))
+        except Exception:
+            _QN_SLOT.update(at=now, kh=None, hosts={})
+    return _QN_SLOT["kh"], _QN_SLOT["hosts"]
+
+
+def _qn_rej_err(err) -> bool:
+    if err is None:
+        return False
+    if getattr(err, "code", None) in QN_REJECT_HTTP:
+        return True
+    return bool(_QN_REJECT_TXT.search(str(err) + " " + str(getattr(err, "body", "") or "")))
+
+
+def _qn_rej_body(body) -> bool:
+    items = body if isinstance(body, list) else [body]
+    for it in items:
+        e9 = it.get("error") if isinstance(it, dict) else None
+        if e9 and _QN_REJECT_TXT.search(e9 if isinstance(e9, str) else json_dumps(e9)):
+            return True
+    return False
+
+
+def _qn_read():
+    try:
+        cur = common.read_json(_qn_path(), None)
+    except (Exception, SystemExit):
+        return None
+    return cur if isinstance(cur, dict) and isinstance(cur.get("hosts"), dict) else None
+
+
+def _qn_update(fn):
+    import fcntl
+    p = _qn_path()
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p + ".lock", "a") as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        cur = _qn_read()
+        new = fn(cur)
+        if new is None:
+            try:
+                os.remove(p)
+            except FileNotFoundError:
+                pass
+        elif new is not cur:
+            common.atomic_write_json(p, new)
+        return new
+
+
+def qn_note(host: str, body=None, err=None) -> None:
+    import logging
+    import time as _t
+    kh, hosts = _qn_slot()
+    h = (host or "").lower()
+    if not kh or h not in hosts:
+        return
+    rej = _qn_rej_err(err) if err is not None else _qn_rej_body(body)
+    if err is not None and not rej:
+        return
+    if not rej:
+        if not os.path.exists(_qn_path()):
+            return
+
+        def ok9(cur):
+            if not cur or cur.get("kh") != kh:
+                return None
+            if h not in cur["hosts"]:
+                return cur
+            if cur["hosts"][h].get("off"):
+                logging.getLogger("tj").warning("QuickNode 키가 다시 응답(%s) — 거부 표식 지움(그 체인 수집기가 QuickNode 를 다시 씀)", hosts.get(h))
+            hs9 = {k: v for k, v in cur["hosts"].items() if k != h}
+            return dict(cur, hosts=hs9) if hs9 else None
+        _qn_update(ok9)
+        return
+    now = int(_t.time())
+    code9 = getattr(err, "code", None) if err is not None else None
+
+    def bad9(cur):
+        cur = dict(cur) if cur and cur.get("kh") == kh else {"v": 1, "kh": kh, "hosts": {}}
+        r9 = dict(cur["hosts"].get(h) or {"first": now, "n": 0, "chain": hosts.get(h)})
+        r9["n"] = int(r9.get("n") or 0) + 1
+        r9["last"] = now
+        if isinstance(code9, int):
+            r9["code"] = code9
+        if not r9.get("off") and r9["n"] >= QN_REJECT_N and now - int(r9.get("first") or now) >= QN_REJECT_SEC:
+            r9["off"] = True
+            r9["off_at"] = now
+            logging.getLogger("tj").warning("★QuickNode 키가 계속 거부됨(%s · %s회 · HTTP %s) — 체험이 끝났거나 크레딧을 다 썼을 수 있음 → 그 체인은 QuickNode 빼고 기본 노드로 복귀"
+                                            "(수집기 자동 재시작 · 설정 › 연결·키 에서 유료로 바꾼 뒤 '연결 테스트' 통과 또는 키를 바꾸면 다시 씀)★",
+                                            hosts.get(h), r9["n"], r9.get("code", "-"))
+        cur["hosts"] = dict(cur["hosts"], **{h: r9})
+        return cur
+    _qn_update(bad9)
+
+
+def qn_off_hosts(env: dict = None) -> dict:
+    cur = _qn_read()
+    if not cur or not any(isinstance(v, dict) and v.get("off") for v in cur["hosts"].values()):
+        return {}
+    env = _env() if env is None else env
+    if cur.get("kh") != qn_kh(env):
+        return {}
+    mine = qn_hosts(env)
+    return {k: v for k, v in cur["hosts"].items() if isinstance(v, dict) and v.get("off") and k in mine}
+
+
+def qn_rejected(env: dict = None):
+    off = qn_off_hosts(env)
+    if not off:
+        return None
+    mine = qn_hosts(env)
+    codes = [v.get("code") for v in off.values() if isinstance(v.get("code"), int)]
+    return {"since": min(int(v.get("off_at") or 0) for v in off.values()), "code": codes[0] if codes else None,
+            "chains": sorted({mine[k] for k in off}, key=("bsc", "base").index)}
+
+
+def qn_reject_clear() -> bool:
+    had = []
+
+    def clr(cur):
+        had.append(bool(cur and any(isinstance(v, dict) and v.get("off") for v in cur["hosts"].values())))
+        return None
+    try:
+        _qn_update(clr)
+    except OSError:
+        return False
+    _QN_SLOT["at"] = -1e18
+    return bool(had and had[0])
+
+
+def route_fp(chain: str) -> str:
+    try:
+        env = _env()
+        off = qn_off_hosts(env)
+        if not off:
+            return ""
+        mine = qn_hosts(env)
+        return f"qn_off:{qn_kh(env)}:{chain}" if any(mine.get(k) == chain for k in off) else ""
+    except Exception:
+        return ""
+
+
+def cn_key(v):
+    s9 = str(v or "").strip()
+    if CN_KEY_RE.match(s9):
+        return s9
+    try:
+        sp = urllib.parse.urlsplit(s9)
+        port = sp.port
+    except ValueError:
+        return None
+    h = (sp.hostname or "").lower()
+    if sp.scheme != "https" or sp.username or sp.password or port is not None or not CN_HOST_RE.match(h) or sp.query or sp.fragment:
+        return None
+    seg = [x for x in (sp.path or "").split("/") if x]
+    return seg[0] if len(seg) == 1 and CN_KEY_RE.match(seg[0]) else None
+
+
+def cn_url(env: dict = None):
+    k = cn_key(((_env() if env is None else env) or {}).get(ENV_CN))
+    return CN_BASE + k if k else None
+
+
+def trace_nodes(env: dict = None, us: dict = None) -> list:
+    env = _env() if env is None else env
+    out = []
+    u = cn_url(env)
+    if u:
+        out.append(("chainnodes", u))
+    q = trace_url(urls(env) if us is None else us, "base")
+    if q:
+        out.append(("quicknode", q))
+    return out
+
+
+def urls(env: dict = None, all_qn: bool = False) -> dict:
     env = _env() if env is None else env
     out = {"bsc": [], "base": []}
     k = str(env.get(ENV_NODEREAL) or "").strip()
@@ -154,6 +378,11 @@ def urls(env: dict = None) -> dict:
         u = qn_chain_url(env.get(ENV_QN), c) if qn_multi(env) else _qn_url(env.get(ENV_QN_BSC if c == "bsc" else ENV_QN_BASE), c)
         if u:
             out[c].append(("quicknode", u))
+    if not all_qn and any(p == "quicknode" for c in ("bsc", "base") for p, _u in out[c]) and os.path.exists(_qn_path()):
+        off = qn_off_hosts(env)
+        if off:
+            for c in ("bsc", "base"):
+                out[c] = [(p, u) for p, u in out[c] if not (p == "quicknode" and _host(u) in off)]
     return out
 
 
@@ -293,13 +522,23 @@ def apply(cfg: dict, env: dict = None, settings: dict = None) -> dict:
             done.setdefault("bsc", []).append(p)
         bc["logs_rpcs"], bc["archive_rpcs"], bc["getlogs_span_caps"] = logs, arch, caps
     cb = (cfg.get("chains") or {}).get("base") if isinstance(cfg.get("chains"), dict) else None
-    tq = trace_url(us, "base")
-    if isinstance(cb, dict) and tq:
-        tr = [str(u) for u in (cb.get("trace_rpcs") or [])] if "trace_rpcs" in cb else []
-        if tq not in tr:
-            tr.insert(0, tq)
-        cb["trace_rpcs"] = tr
-        done["base_trace"] = ["quicknode"]
+    tn = trace_nodes(env, us)
+    if isinstance(cb, dict) and tn:
+        try:
+            import evm_watch
+            d16 = [str(u) for u in (evm_watch.rpc_nodes(cfg, "base").get("trace") or [])]
+        except Exception:
+            d16 = []
+        user9 = [str(u) for u in (cb.get("trace_rpcs") or [])] if "trace_rpcs" in cb else []
+        cb["trace_rpcs"] = list(dict.fromkeys(user9 + [u for _p, u in tn] + d16))
+        done["base_trace"] = [p for p, _u in tn]
+    if cn_url(env):
+        bf9 = cfg.get("backfill", {})
+        if isinstance(bf9, dict) and isinstance(bf9.get("hosts", {}), dict):
+            h9 = dict(bf9.get("hosts") or {})
+            for h, pol in CN_HOST_POLICY.items():
+                h9.setdefault(h, dict(pol))
+            cfg["backfill"] = dict(bf9, hosts=h9)
     if isinstance(cb, dict) and us["base"]:
         rl = [str(u) for u in (cb.get("rpc_logs") or [])]
         if not rl:
@@ -337,7 +576,8 @@ def is_key_node(url: str) -> bool:
         h = (urllib.parse.urlsplit(str(url)).hostname or "").lower()
     except ValueError:
         return False
-    return h in ("bsc-mainnet.nodereal.io", "rpc.ankr.com") or h.endswith(".quiknode.pro") or h.endswith(".g.alchemy.com")
+    return (h in ("bsc-mainnet.nodereal.io", "rpc.ankr.com") or h.endswith(".quiknode.pro") or h.endswith(".g.alchemy.com")
+            or h.endswith(".chainnodes.org"))
 
 
 def fingerprint() -> str:
@@ -346,6 +586,8 @@ def fingerprint() -> str:
     vals = [str(env.get(k) or "") for k in (ENV_NODEREAL, ENV_ANKR, ENV_QN_BSC, ENV_QN_BASE)]
     if qn_multi(env):
         vals.append(str(env.get(ENV_QN) or ""))
+    if str(env.get(ENV_CN) or "").strip():
+        vals.append("cn:" + str(env.get(ENV_CN) or "").strip())
     pl = {q: {k: v for k, v in d.items() if k != "fresh_since"} for q, d in plans().items()}
     return hashlib.sha256(json_dumps([vals, pl]).encode()).hexdigest()[:12]
 
@@ -360,8 +602,11 @@ def status(env: dict = None, settings: dict = None) -> dict:
     us = urls(env)
     pl = plans(settings)
     out = {}
+    cn9 = cn_url(env)
     for p, meta in PROVIDERS.items():
         chains = [c for c in ("bsc", "base") if any(q == p for q, _u in us[c])]
+        if p == "chainnodes" and cn9:
+            chains = ["base"]
         sp = budget_spec(p, pl[p])
         out[p] = {"name": meta["name"], "chains": chains, "plan": pl[p]["plan"], "share": pl[p]["share"], "month": pl[p]["month"],
                   "freeMonth": meta["free_month"], "unit": meta["unit"], "unitKo": UNIT_KO.get(p, "CU"), "paidOnly": meta["paid_only"], "shares": list(SHARES),
@@ -369,6 +614,15 @@ def status(env: dict = None, settings: dict = None) -> dict:
                   "usedToday": used_today(p), "pool": meta.get("pool", True)}
         out[p]["burstX"] = sp.get("burst") or 1
         out[p]["noLogs"] = bool(meta.get("no_logs"))
+        if meta.get("trace_only"):
+            out[p]["traceOnly"] = True
+        if p == "quicknode":
+            try:
+                rj9 = qn_rejected(env)
+            except Exception:
+                rj9 = None
+            if rj9:
+                out[p]["rejected"] = rj9
         out[p]["freshSince"] = pl[p].get("fresh_since")
         out[p]["bursting"] = bool(sp.get("burst")) and out[p]["usedToday"] > out[p]["perDay"]
         if sp.get("burst"):

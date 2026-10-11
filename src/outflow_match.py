@@ -1,4 +1,5 @@
 """Matches outgoing transfers to known destinations."""
+import base64
 import re
 from decimal import Decimal
 
@@ -17,11 +18,25 @@ SPECIAL_DESTS = ("multi", "?")
 FULL_RETURN = Decimal("0.98")
 
 
+_TON_UID = re.compile(r"^-?\d{1,3}_[0-9a-f]{64}\.\d+\.([0-9a-f]{64})$")
+_B64_32 = re.compile(r"^[A-Za-z0-9+/_-]{43}=$")
+
+
 def norm_txid(t) -> str:
     t = str(t or "").strip()
     m = _HEX64.match(t)
     if m:
         return "0x" + m.group(1).lower()
+    m = _TON_UID.match(t)
+    if m:
+        return "0x" + m.group(1)
+    if _B64_32.match(t):
+        try:
+            b = base64.b64decode(t.replace("-", "+").replace("_", "/"), validate=True)
+        except (ValueError, TypeError):
+            return t
+        if len(b) == 32:
+            return "0x" + b.hex()
     return t
 
 

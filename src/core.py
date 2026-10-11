@@ -26,6 +26,9 @@ import bf_engine
 import ledger_backup
 import ops_requests
 import discopen
+import chain_registry
+import chain_event
+import chain_state
 from inbox import SegmentReader
 
 log = common.setup_logging("tj-core")
@@ -126,6 +129,11 @@ class Core:
             self.conn.execute(
                 "INSERT OR IGNORE INTO wallets (chain, address, label, added_at) VALUES (?,?,?,?)",
                 (w["chain"], a, w.get("label"), now))
+        self.chain_owners = {}
+        for r9 in chain_registry.wallets(cfg):
+            self.chain_owners.setdefault(r9["chain"], set()).add(r9["key"])
+            self.conn.execute("INSERT OR IGNORE INTO wallets (chain, address, label, added_at) VALUES (?,?,?,?)",
+                              (r9["chain"], r9["key"], r9["label"] or None, now))
         for w in cfg.get("_disabled_wallets") or []:
             if isinstance(w, dict) and w.get("type", "evm") == "evm" and w.get("chain") and str(w.get("address") or "").startswith("0x"):
                 self.my_wallets.setdefault(w["chain"], set()).add(str(w["address"]).lower())
@@ -139,6 +147,8 @@ class Core:
         self.sol_reader = SegmentReader(os.path.join(common.INBOX_DIR, "sol"))
         self.bsc_reader = SegmentReader(os.path.join(common.INBOX_DIR, "bsc"))
         self.ex_reader = SegmentReader(os.path.join(common.INBOX_DIR, "ex"))
+        self.chain_readers = [(c9, SegmentReader(os.path.join(common.INBOX_DIR, chain_registry.spec(c9).stream)))
+                              for c9 in sorted(set(self.chain_owners) | set(chain_registry.present_streams(common.INBOX_DIR, common.STATE_DIR)))]
         self.px = pricing.PxCache(os.path.join(common.STATE_DIR, "px_cache_core.json"), track_legacy=True)
         self._last_price_pass = 0.0
         self._px_skip = (None, "[]")
@@ -163,6 +173,12 @@ class Core:
     def _load_exchange_addrs(self, cfg: dict):
         for ex in cfg.get("exchange_addresses", []):
             addr = ex["address"] if ex["chain"] == "sol" else ex["address"].lower()
+            if chain_registry.is_nonevm(ex["chain"]):
+                try:
+                    addr = chain_event.norm_counterparty(ex["chain"], ex["address"])
+                except ValueError:
+                    log.warning("거래소 주소 형식 오류(%s) — 건너뜀", ex["chain"])
+                    continue
             self.conn.execute(
                 "INSERT OR IGNORE INTO exchange_addresses (exchange, chain, address, currency, memo, sync_state)"
                 " VALUES (?,?,?,?,?,'manual')",
@@ -419,7 +435,7 @@ class Core:
             gas_wallet = frm
         native_aid = self.asset_id("native", chain, None,
                                    symbol=self.native_sym.get(chain, chain.upper()),
-                                   decimals=9 if chain == "sol" else 18)
+                                   decimals=9 if chain == "sol" else chain_registry.native_decimals(chain, 18))
         if not failed:
             try:
                 val = int(tx.get("value") or 0)
@@ -697,7 +713,7 @@ class Core:
                 gas9 = {(p["asset_id"], p["location"], p["qty_base"]): (p["cost_usd"], p["cost_krw"]) for p in self.conn.execute(
                     "SELECT asset_id, location, qty_base, cost_usd, cost_krw FROM postings WHERE source_kind='chain_tx'"
                     " AND source_ns=? AND source_id=? AND leg_kind='gas' AND cost_usd IS NOT NULL", (r["chain"], r["txhash"])).fetchall()}
-                ev = self._rederive_tx(r["chain"], r["txhash"])
+                ev = self._rederive_tx_anchor_safe(r["chain"], r["txhash"])
                 for (aid9, loc9, qb9), (cu9, ck9) in gas9.items():
                     self.conn.execute("UPDATE postings SET cost_usd=?, cost_krw=? WHERE source_kind='chain_tx' AND source_ns=?"
                                       " AND source_id=? AND leg_kind='gas' AND asset_id=? AND location=? AND qty_base=?"
@@ -763,7 +779,7 @@ class Core:
                     gas9 = {(p["asset_id"], p["location"], p["qty_base"]): (p["cost_usd"], p["cost_krw"]) for p in self.conn.execute(
                         "SELECT asset_id, location, qty_base, cost_usd, cost_krw FROM postings WHERE source_kind='chain_tx'"
                         " AND source_ns=? AND source_id=? AND leg_kind='gas' AND cost_usd IS NOT NULL", (ch, h)).fetchall()}
-                    ev = self._rederive_tx(ch, h)
+                    ev = self._rederive_tx_anchor_safe(ch, h)
                     for (aid9, loc9, qb9), (cu9, ck9) in gas9.items():
                         self.conn.execute("UPDATE postings SET cost_usd=?, cost_krw=? WHERE source_kind='chain_tx' AND source_ns=?"
                                           " AND source_id=? AND leg_kind='gas' AND asset_id=? AND location=? AND qty_base=?"
@@ -791,7 +807,7 @@ class Core:
         acc = {}
         tx = snap.get("tx") or {}
         native_aid = self.asset_id("native", chain, None, symbol=self.native_sym.get(chain, chain.upper()),
-                                   decimals=9 if chain == "sol" else 18)
+                                   decimals=9 if chain == "sol" else chain_registry.native_decimals(chain, 18))
 
         def add(w, aid, to9, v):
             if w in mine and to9 and to9 not in mine and v > 0:
@@ -921,6 +937,12 @@ class Core:
         self._hist_late_gone("chain_tx", chain, txhash, t_old9)
         return ev
 
+    def _rederive_tx_anchor_safe(self, chain: str, txhash: str) -> str:
+        before = self._tx_wallet_sums(chain, txhash)
+        ev = self._rederive_tx(chain, txhash)
+        self._anchor_absorb(chain, txhash, before)
+        return ev
+
     def _hist_late_gone(self, kind: str, ns: str, sid: str, t_old):
         if t_old is None:
             return None
@@ -975,7 +997,7 @@ class Core:
                 txs.add((r["source_ns"], r["source_id"]))
             try:
                 for ch9, h9 in sorted(txs):
-                    self._rederive_tx(ch9, h9)
+                    self._rederive_tx_anchor_safe(ch9, h9)
                     n_tx += 1
                 self.conn.execute("INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)", (k, sig))
                 self.conn.commit()
@@ -1376,12 +1398,14 @@ class Core:
     }
 
     def apply(self, chain: str, txhash: str, wallets_json: str, snap: dict, rederive=None):
+        if isinstance(snap, dict) and snap.get("kind") == chain_event.KIND:
+            return self.apply_chain_delta(snap, rederive=rederive)
         event, deltas, perw, gas, gas_w, ts, ex_hint, dest = self.classify(chain, txhash, snap)
         return self._post_event(chain, txhash, event, deltas, perw, gas, gas_w, ts, ex_hint,
                                 dest=dest, rederive=rederive)
 
     def _post_event(self, chain: str, txhash: str, event: str, deltas: dict, perw: dict,
-                    gas: int, gas_w, ts: int, ex_hint, dest=None, rederive=None):
+                    gas: int, gas_w, ts: int, ex_hint, dest=None, rederive=None, extra_legs=None):
         quiet = rederive is not None
         keep_aids = rederive[1] if rederive else frozenset()
         self.conn.execute(
@@ -1462,10 +1486,12 @@ class Core:
                 if not quiet:
                     dm("PROGRAM_IN", f"[{chain}] 프로그램 경유 수령 tx {txhash} — 체결/에어드랍 검토",
                        {"chain": chain, "txhash": txhash}, event_ts=ts)
+        if extra_legs:
+            legs.extend(extra_legs)
         if gas:
             native_aid = self.asset_id("native", chain, None,
                                        symbol=self.native_sym.get(chain, chain.upper()),
-                                       decimals=9 if chain == "sol" else 18)
+                                       decimals=9 if chain == "sol" else chain_registry.native_decimals(chain, 18))
             legs.append(("gas", native_aid, -gas, loc_of(gas_w)))
         for seq, (lk, aid, v, l) in enumerate(legs):
             self.conn.execute(
@@ -1639,6 +1665,125 @@ class Core:
             self._drop_daily_cache()
         return self._post_event("sol", txhash, event, deltas, perw, gas, gas_w, ts, ex_hint,
                                 dest={"to": None, "cps": sorted(cps)[:4]}, rederive=rederive)
+
+    def apply_chain_delta(self, rec: dict, rederive=None):
+        c = chain_event.to_core(rec)
+        chain, uid, ts = c["chain"], c["uid"], c["ts"]
+        sp = chain_registry.spec(chain)
+        mine = set(self.chain_owners.get(chain) or ()) | set(c["owners"])
+        aids = {}
+
+        def aid_of(ak):
+            if ak not in aids:
+                if ak[0] == "native":
+                    aids[ak] = self.asset_id("native", chain, None, symbol=sp.native_symbol, decimals=sp.native_decimals)
+                else:
+                    m9 = c["meta"].get(ak) or {}
+                    if m9.get("decimals") is None:
+                        r9 = self.conn.execute("SELECT decimals FROM assets WHERE kind='token' AND chain=? AND address IS ?",
+                                               (chain, ak[1].lower() if ak[1] else None)).fetchone()
+                        if r9 is None or r9["decimals"] is None:
+                            raise chain_event.ContractError(f"[{chain}] 자릿수 미확인 토큰 {str(ak[1])[:24]} — 보류(18 로 짐작해 기장하지 않음)")
+                    aids[ak] = self.asset_id("token", chain, ak[1], symbol=m9.get("symbol"), decimals=m9.get("decimals"))
+            return aids[ak]
+        perw, deltas = {}, {}
+        for (o, ak), v in sorted(c["econ"].items(), key=lambda kv: (kv[0][0], kv[0][1][0], kv[0][1][1] or "")):
+            a9 = aid_of(ak)
+            perw[(o, a9)] = perw.get((o, a9), 0) + v
+            deltas[a9] = deltas.get(a9, 0) + v
+        deltas = {a: v for a, v in deltas.items() if v}
+        outs = {a for a, v in deltas.items() if v < 0}
+        ins = {a for a, v in deltas.items() if v > 0}
+        moved = any(v for v in perw.values())
+        cps = set(c["cps"]) - mine
+        ex_rows = {r["address"]: r["exchange"] for r in self.conn.execute(
+            "SELECT address, exchange FROM exchange_addresses WHERE chain=?", (chain,)).fetchall()}
+        hint = c["hint"]
+        if c["failed"]:
+            event, ex_hint = ("UNKNOWN" if moved else "FAILED"), None
+        elif not moved:
+            event, ex_hint = "NOOP", None
+        elif not deltas:
+            event, ex_hint = "TRANSFER_SELF", None
+        elif outs and not ins and cps and cps <= set(ex_rows):
+            event, ex_hint = "TRANSFER_OUT_EX", sorted({ex_rows[a] for a in cps})[0]
+        elif outs and ins:
+            event, ex_hint = ("SWAP" if (hint == "swap" and c["trusted"] and c["trace_complete"]) else "UNKNOWN"), None
+            if event == "SWAP":
+                unconfirmed = [a for a in sorted(ins) if not self.is_confirmed(a)]
+                for a in unconfirmed:
+                    self.conn.execute("UPDATE assets SET confirmed=1 WHERE asset_id=?", (a,))
+                if unconfirmed and rederive is None:
+                    dm("NEW_ASSET", f"[{chain}] 새 자산 자동 기록 tx {rec.get('txhash')} — 검토",
+                       {"chain": chain, "txhash": uid, "assets": [int(a) for a in unconfirmed]}, event_ts=ts)
+        elif outs:
+            event, ex_hint = "TRANSFER_OUT", None
+        else:
+            event = "PROGRAM_IN" if (hint in ("program_in", "stake", "swap", "unknown") or not c["trace_complete"]) else "TRANSFER_IN"
+            ex_hint = None
+        out9 = {}
+        for (o, ak), to9 in c["dest"].items():
+            out9[f"{o}|{aid_of(ak)}"] = to9
+        extra = []
+        for o, f in sorted(c["fee"].items()):
+            loc9 = chain_registry.make_location(chain, o)
+            extra.append(("gas", aid_of(("native", None)), -f, loc9) if f > 0 else ("acq", aid_of(("native", None)), -f, loc9))
+        return self._post_event(chain, uid, event, deltas, perw, 0, None, ts, ex_hint,
+                                dest={"to": None, "cps": sorted(cps)[:4], "out": out9}, rederive=rederive, extra_legs=extra)
+
+    def _consume_chain_delta(self, rec: dict):
+        chain_event.validate(rec)
+        chain, uid = rec["chain"], rec["tx_uid"]
+        sp = chain_registry.spec(chain)
+        od = rec.get("order") or {}
+        blk = od.get("height") if sp.order_kind == "height" else (od.get("checkpoint") if sp.order_kind == "checkpoint" else None)
+        try:
+            blk = int(blk) if blk is not None else None
+        except (TypeError, ValueError):
+            blk = None
+        cur = self.conn.execute(
+            "INSERT OR IGNORE INTO raw_txs (chain, txhash, block, blockhash, ts, snapshot, wallets, ingested_at) VALUES (?,?,?,?,?,?,?,?)",
+            (chain, uid, blk, (rec.get("finality") or {}).get("blockhash"), rec["ts"], json.dumps(rec, ensure_ascii=False),
+             json.dumps(sorted(rec.get("owners") or [])), int(time.time())))
+        if cur.rowcount:
+            ev = self.apply_chain_delta(rec)
+            log.info("[%s] %s → %s", chain, uid[:14], ev)
+            self._note_pre_window(chain, rec["ts"], uid)
+            return ev
+        row = self.conn.execute("SELECT snapshot FROM raw_txs WHERE chain=? AND txhash=?", (chain, uid)).fetchone()
+        try:
+            old = json.loads(row["snapshot"])
+        except (TypeError, ValueError):
+            raise RuntimeError(f"[{chain}] 저장본 해석 불가 — 재방출 격리 유지(replay_poison 으로 재시도)")
+        verdict = chain_event.merge_ok(old, rec)
+        if verdict == "same":
+            return None
+        if verdict == "conflict":
+            raise RuntimeError(f"[{chain}] 같은 tx 재방출이 저장본과 모순(레그 엇갈림·실패 여부 다름) — 격리 유지(replay_poison 으로 재시도)")
+        t_before = self._tx_hist_ts(chain, uid)
+        before = self._tx_wallet_sums(chain, uid)
+        oe = self.conn.execute("SELECT event FROM tx_class WHERE chain=? AND txhash=?", (chain, uid)).fetchone()
+        old_ev = oe["event"] if oe else None
+        for p in self.conn.execute("SELECT asset_id, location, qty_base FROM postings WHERE source_kind='chain_tx'"
+                                   " AND source_ns=? AND source_id=?", (chain, uid)).fetchall():
+            self._bump_position(p["asset_id"], -int(p["qty_base"]), p["location"])
+        self.conn.execute("DELETE FROM postings WHERE source_kind='chain_tx' AND source_ns=? AND source_id=?", (chain, uid))
+        keep = set()
+        for t in self.conn.execute("SELECT transfer_id, state, asset_id FROM transfers WHERE chain_txhash=?", (uid,)).fetchall():
+            if t["state"] == "sent":
+                self.conn.execute("DELETE FROM transfers WHERE transfer_id=?", (t["transfer_id"],))
+            else:
+                keep.add(t["asset_id"])
+        self.conn.execute("UPDATE raw_txs SET snapshot=?, wallets=?, ingested_at=? WHERE chain=? AND txhash=?",
+                          (json.dumps(rec, ensure_ascii=False), json.dumps(sorted(rec.get("owners") or [])), int(time.time()), chain, uid))
+        ev = self.apply_chain_delta(rec, rederive=(old_ev, frozenset(keep)))
+        self._anchor_absorb(chain, uid, before)
+        self._hist_late_gone("chain_tx", chain, uid, t_before)
+        self._drop_daily_cache()
+        log.info("★[%s] %s 재파생(새 관점): %s→%s★", chain, uid[:14], old_ev, ev)
+        if ev != old_ev:
+            dm("REDERIVE", f"[{chain}] 새 관점으로 분류 변경 {old_ev}→{ev} tx {rec.get('txhash')}", {"chain": chain, "txhash": uid})
+        return ev
 
     @staticmethod
     def _drop_daily_cache():
@@ -2522,6 +2667,8 @@ class Core:
 
     def _scope_ready(self, scope: str) -> bool:
         sd = common.STATE_DIR
+        if chain_registry.is_nonevm(scope):
+            return chain_state.ChainState(scope, sd).ready(self.chain_owners.get(scope, set()))
         if scope == "sol":
             cur = common.read_json(os.path.join(sd, "cursor_sol.json"), {})
             return self._synced(cur) and all(o in cur for o in self.sol_wallets)
@@ -2623,11 +2770,138 @@ class Core:
             self.__dict__.get("_recon_cache", {}).pop(c, None)
             log.warning("★%s RPC 백필 완료 → 탐색기 시절 대사 도장 해제, 온체인 잔고로 재대사★", c)
 
+    def _nonevm_adapter(self, chain: str):
+        cache = self.__dict__.setdefault("_nonevm_adapters", {})
+        if chain not in cache:
+            ad = None
+            if chain_registry.available(chain):
+                try:
+                    import importlib
+                    mk = getattr(importlib.import_module(chain_registry.spec(chain).module), "make_adapter", None)
+                    ad = mk(self.cfg) if callable(mk) else None
+                except Exception as e:
+                    log.warning("[%s] 수집기 어댑터 만들기 실패(대사 없음): %s", chain, common.safe_err(e)[:160])
+                    ad = None
+            cache[chain] = ad
+        return cache[chain]
+
+    SUI_GAP_CHECK_MAX = 8
+
+    def _sui_recon_guard(self, chain: str):
+        st9 = chain_state.ChainState(chain, common.STATE_DIR)
+        pend = sorted(str(s9) for s9 in st9.d["pending"])
+        gaps = st9.unresolved_gaps()
+        fp = json.dumps([pend, sorted([s9, str(r9.get("owner")), sorted(o9)] for s9, r9, o9 in gaps)])
+        return pend, gaps, fp
+
+    def _nonevm_fetch_plan(self, chain: str, wallets: list, mode: str = None):
+        ad = self._nonevm_adapter(chain)
+        if ad is None:
+            raise RuntimeError(f"[{chain}] 수집기 어댑터 없음")
+        toks = {}
+        for r in self.conn.execute("SELECT DISTINCT p.location, a.address FROM postings p JOIN assets a ON a.asset_id = p.asset_id"
+                                   " WHERE a.chain=? AND a.kind='token' AND p.location LIKE ?", (chain, f"wallet:{chain}:%")).fetchall():
+            w9 = chain_registry.parse_location(r["location"])[2]
+            if w9 in wallets and r["address"]:
+                toks.setdefault(w9, set()).add(r["address"])
+        toks = {w: sorted(v) for w, v in toks.items()}
+        ldec = {str(r["address"]).lower(): r["decimals"] for r in self.conn.execute(
+            "SELECT address, decimals FROM assets WHERE chain=? AND kind='token' AND address IS NOT NULL", (chain,)).fetchall()}
+        owners = set(wallets)
+        sp = chain_registry.spec(chain)
+        guard9 = self._sui_recon_guard(chain) if chain == "sui" and mode == "new" else None
+        first9 = {w9 for w9 in owners if not self._meta_get(f"wrecon_done:{chain}:{w9}")} if chain == "sui" else set()
+
+        def run():
+            q_owners, held = set(owners), {}
+            if guard9 is not None:
+                if guard9[0]:
+                    raise RuntimeError(f"[{chain}] 상세 대기 {len(guard9[0])}건 남음 — 지갑별 대사 보류")
+                todo9 = [(sid9, ref9, w9) for sid9, ref9, eo9 in guard9[1] for w9 in sorted(owners) if w9 not in eo9]
+                if len(todo9) > self.SUI_GAP_CHECK_MAX:
+                    raise RuntimeError(f"[{chain}] 미해소 gap 확인 {len(todo9)}건(상한 넘음) — 지갑별 대사 보류")
+                for sid9, ref9, w9 in todo9:
+                    if w9 in held:
+                        continue
+                    try:
+                        rec9 = ad.fetch_and_normalize(dict(ref9, stable_id=sid9, owner=w9, lane="history"), {w9})
+                        if rec9 is None:
+                            raise RuntimeError("gap 거래 상세 없음")
+                        v9 = chain_event.validate(rec9)
+                        hit9 = any(o9 == w9 and d9 for o9, _k9, d9, _m9 in v9["deltas"]) or any(p9 == w9 and f9 for p9, f9 in v9["fees"])
+                    except Exception:
+                        hit9 = True
+                    if hit9:
+                        held[w9] = [sid9]
+                q_owners -= set(held)
+                if not q_owners:
+                    raise RuntimeError(f"[{chain}] 미해소 gap 이 조회 지갑에 영향(또는 모름) — 지갑별 대사 보류")
+            bal = ad.fetch_balances(set(q_owners), None, tokens=toks)
+            sm9 = {w9: sorted(map(str, ks9)) for w9, ks9 in ((bal.get("_sum_mismatch") if isinstance(bal, dict) else None) or {}).items()
+                   if w9 in first9 and ks9} if first9 else {}
+            if sm9:
+                h9 = {w9: set(map(str, v9 or ())) for w9, v9 in (bal.get("_dec_unknown") or {}).items()}
+                why9 = list(bal.get("_why") or [])
+                bal = dict(bal, _complete=False, _why=why9 + ([chain_event.WHY_SUM_MISMATCH] if chain_event.WHY_SUM_MISMATCH not in why9 else []),
+                           _dec_unknown={w9: sorted(h9.get(w9, set()) | set(sm9.get(w9, ()))) for w9 in set(h9) | set(sm9)})
+            du9 = bal.get("_dec_unknown") if guard9 is not None and isinstance(bal, dict) and isinstance(bal.get("_dec_unknown"), dict) else {}
+            if du9 and bal.get("_complete") is False and all(w9 in (chain_event.WHY_DEC_UNKNOWN, chain_event.WHY_SUM_MISMATCH) for w9 in bal.get("_why") or ()):
+                for w9, ks9 in du9.items():
+                    if w9 in q_owners:
+                        held[w9] = sorted(map(str, ks9 or ()))
+                q_owners -= set(du9)
+                if not q_owners:
+                    raise RuntimeError(f"[{chain}] 자릿수 미확인·합계 불일치 새 코인 — 지갑별 대사 보류")
+                bal = dict(bal, _complete=True, _why=[], per_wallet={w9: v9 for w9, v9 in (bal.get("per_wallet") or {}).items() if w9 in q_owners})
+            chk9 = chain_event.validate_balances(bal, chain, q_owners)
+            if not chk9["ok"]:
+                raise RuntimeError(f"[{chain}] 대사 결과 보류: " + " · ".join(chk9["why"][:3]))
+            per = chk9["usable"]
+            hint9 = bal.get("_meta") or {}
+            bad9 = set()
+            for w9 in list(per):
+                wb9 = {}
+                for k9, x9 in per[w9].items():
+                    if k9[0] == "token":
+                        a9 = str(k9[1]).lower()
+                        h9 = hint9.get(k9[1])
+                        if not (chain_event.valid_decimals(ldec.get(a9))
+                                or chain_event.valid_decimals(h9[1] if isinstance(h9, (list, tuple)) and len(h9) >= 2 else None)):
+                            if a9 not in ldec and not x9:
+                                continue
+                            bad9.add(str(k9[1]))
+                            continue
+                    wb9[k9] = x9
+                per[w9] = wb9
+            if bad9:
+                raise RuntimeError(f"[{chain}] 자릿수 미확인 토큰 {len(bad9)}개 — 기초 잔고 대사 보류(18 로 짐작하지 않음)")
+            out = {"per_wallet": per, "_meta": dict(bal.get("_meta") or {}), "_source": "rpc",
+                   "_queried": {w: sorted(k[1] for k in wb if k[0] == "token") for w, wb in per.items()},
+                   "_unobs": {w: sorted(map(str, v)) for w, v in (bal.get("_unobserved") or {}).items() if v}}
+            if chain == "ton" and isinstance(bal.get("_jw_fp"), dict):
+                out["_jw_fp"] = bal["_jw_fp"]
+            if guard9 is not None:
+                out["_sui_fp"] = guard9[2]
+                if held:
+                    out["_hold"] = held
+            b9 = bal.get("_boundary") or {}
+            if b9.get("kind") in ("height", "checkpoint") and sp.order_kind == b9.get("kind"):
+                try:
+                    out["_block"] = int(b9.get("value"))
+                    if isinstance(b9.get("ts"), int) and not isinstance(b9.get("ts"), bool):
+                        out["_block_ts"] = int(b9["ts"])
+                except (TypeError, ValueError):
+                    pass
+            return out
+        return run
+
     def _recon_fetch(self, chain: str, kind: str, wallets: list) -> dict:
         return self._recon_fetch_plan(chain, kind, wallets)()
 
     def _recon_fetch_plan(self, chain: str, kind: str, wallets: list, mode: str = None, latest: bool = False):
         wallets = list(wallets)
+        if kind == "nonevm":
+            return self._nonevm_fetch_plan(chain, wallets, mode)
         if kind == "sol":
             url9 = self._sol_rpc_url()
             return lambda: recon.fetch_sol_balances(url9, wallets)
@@ -2879,8 +3153,8 @@ class Core:
             for (k2, addr), amount in wb.items():
                 if k2 == "native":
                     aid = self.asset_id("native", chain, None,
-                                        symbol=self.native_sym.get(chain, chain.upper()),
-                                        decimals=9 if chain == "sol" else 18)
+                                        symbol=self.native_sym.get(chain, chain_registry.native_symbol(chain, chain.upper())),
+                                        decimals=9 if chain == "sol" else chain_registry.native_decimals(chain, 18))
                 else:
                     hint = meta_hint.get(addr, (None, None))
                     aid = self.asset_id("token", chain, addr, symbol=hint[0], decimals=hint[1])
@@ -2894,7 +3168,7 @@ class Core:
 
     def _recon_pending_chains(self):
         out = set()
-        for stream, reader in (("evm", self.reader), ("sol", self.sol_reader), ("bsc", self.bsc_reader)):
+        for stream, reader in (("evm", self.reader), ("sol", self.sol_reader), ("bsc", self.bsc_reader)) + tuple(self.__dict__.get("chain_readers") or ()):
             row = self.conn.execute("SELECT seg, off FROM inbox_offsets WHERE stream=?", (stream,)).fetchone()
             seg, off = (row["seg"], row["off"]) if row else (1, 0)
             batch, _, _ = reader.read_batch(seg, off, max_records=self.RECON_PENDING_SCAN)
@@ -2990,13 +3264,24 @@ class Core:
         if job["wallets"] != wl:
             log.info("%s 보류 — 조회 중 지갑 목록 변경", label)
             return None
+        sui9 = kind == "nonevm" and chain == "sui" and mode == "new"
         if not (self._scope_ready_tok(chain) if mode == "tok" else
-                self._scope_ready_natx(chain) if mode == "natx" else self._scope_ready(chain)):
+                self._scope_ready_natx(chain) if mode == "natx" else
+                chain_state.ChainState(chain, common.STATE_DIR).ready(set(wl)) if sui9 else self._scope_ready(chain)):
             log.info("%s 보류 — 조회 중 수집기 준비 상태 해제(동기 도장·상세 큐)", label)
+            return None
+        if sui9 and (job["bal"] if isinstance(job["bal"], dict) else {}).get("_sui_fp") != self._sui_recon_guard(chain)[2]:
+            log.info("%s 보류 — 조회 중 수집기 상세 대기·gap 상태 변경(또는 지문 없음)", label)
             return None
         if self._recon_fp(chain, None if mode == "chain" else wl) != job["fp"]:
             log.info("%s 보류 — 조회 중 신규 레코드 유입(이 체인 원장 변경)", label)
             return None
+        jf9 = (job["bal"] if isinstance(job["bal"], dict) else {}).get("_jw_fp") if kind == "nonevm" and chain == "ton" else None
+        if jf9 is not None:
+            import ton_watch
+            if ton_watch.jw_fingerprint(wl) != jf9:
+                log.info("%s 보류 — 조회 중 검증 제톤 지갑 집합 변경(폐기·재조회)", label)
+                return None
         if job["t1"] - job["t0"] > 30:
             log.info("%s 잔고조회 %.0f초 — 백그라운드 완료(소비 루프 비차단) · 반영", label, job["t1"] - job["t0"])
         b9 = job["bal"] if isinstance(job["bal"], dict) else {}
@@ -3016,6 +3301,8 @@ class Core:
 
     def _wallet_backfilled(self, chain: str, kind: str, w: str) -> bool:
         sd = common.STATE_DIR
+        if kind == "nonevm":
+            return chain_state.ChainState(chain, sd).owner_done(w)
         if kind == "bsc":
             cur = common.read_json(os.path.join(sd, "cursor_bsc.json"), {})
             return w in {str(x).lower() for x in (cur.get("_wallets") or [])} and not cur.get("_neww")
@@ -3025,7 +3312,8 @@ class Core:
 
     def _recon_new_wallets(self, chain: str, kind: str, stream: str, drained: set, cutoff_ts: int, start: bool = True):
         T, ws = self._recon_view(chain)
-        pool = sorted(self.sol_wallets) if kind == "sol" else sorted(self.my_wallets.get(chain, set()))
+        pool = sorted(self.sol_wallets) if kind == "sol" else (sorted(self.chain_owners.get(chain, set())) if kind == "nonevm"
+                                                               else sorted(self.my_wallets.get(chain, set())))
 
         def cands():
             return [w for w in pool if w.lower() not in ws and not self._meta_get(f"wrecon_done:{chain}:{w}")]
@@ -3033,6 +3321,9 @@ class Core:
             return 0
         jobs = self.__dict__.get("_recon_jobs", {})
         full_ok = self._scope_ready(chain)
+        if kind == "nonevm" and chain == "sui" and not full_ok:
+            st9 = chain_state.ChainState(chain, common.STATE_DIR)
+            full_ok = st9.ready({w for w in cands() if st9.owner_done(w)})
         done = 0
         for mode in ("new", "nat"):
             if not full_ok and (chain, mode) not in jobs:
@@ -3246,6 +3537,9 @@ class Core:
             scopes.append(("sol", "sol"))
         if any(w.get("type") == "bsc_rpc" for w in self.cfg["wallets"]):
             scopes.append(("bsc", "bsc"))
+        for c9 in sorted(self.chain_owners):
+            if self.chain_owners[c9] and self._nonevm_adapter(c9) is not None:
+                scopes.append((c9, "nonevm"))
         if start and scopes:
             off9 = self.__dict__.get("_recon_scope_cursor", 0) % len(scopes)
             scopes = scopes[off9:] + scopes[:off9]
@@ -3256,13 +3550,15 @@ class Core:
                 live |= {(c, "new"), (c, "tok"), (c, "nat"), (c, "natx")}
             else:
                 live.add((c, "chain"))
+                if c == "sui" and _k == "nonevm":
+                    live.add((c, "new"))
         now9 = time.time()
         for k9 in [k for k, j in jobs.items() if j["ev"].is_set()
                    and (k not in live or now9 - (j["t1"] or now9) > self.RECON_DEFER_MAX_SEC)]:
             jobs.pop(k9, None)
         for chain, kind in scopes:
             cutoff_ts = self._win_t0(None, chain)
-            stream = {"evm": "evm", "sol": "sol", "bsc": "bsc"}[kind]
+            stream = {"evm": "evm", "sol": "sol", "bsc": "bsc"}.get(kind, chain)
             if self._meta_get(f"recon_done_{chain}"):
                 if not start and not any((chain, m9) in jobs for m9 in ("new", "tok", "nat", "natx")):
                     continue
@@ -3272,11 +3568,20 @@ class Core:
                     self.conn.rollback()
                     log.warning("recon %s 새 지갑 대사 실패(다음 주기): %s", chain, e)
                 continue
+            if chain == "sui" and kind == "nonevm" and (chain, "chain") not in jobs \
+                    and ((chain, "new") in jobs or (start and not self._scope_ready(chain))):
+                try:
+                    self._recon_new_wallets(chain, kind, stream, drained, cutoff_ts, start=start)
+                except Exception as e:
+                    self.conn.rollback()
+                    log.warning("recon %s 지갑별 대사 보류·실패(다음 주기): %s", chain, common.safe_err(e)[:200])
+                continue
             if (chain, "chain") not in jobs:
                 if not start or not self._scope_ready(chain) or not self._recon_quiet(chain, stream, drained):
                     continue
             try:
-                bal = self._recon_bal(chain, kind, "chain", sorted(self.my_wallets.get(chain, set())) if kind != "sol"
+                bal = self._recon_bal(chain, kind, "chain", sorted(self.chain_owners.get(chain, set())) if kind == "nonevm"
+                                      else sorted(self.my_wallets.get(chain, set())) if kind != "sol"
                                       else sorted(self.sol_wallets))
             except Exception as e:
                 log.warning("recon %s 잔고조회 실패(다음 주기 재시도): %s", chain, e)
@@ -3301,8 +3606,8 @@ class Core:
                 for (k2, addr), amount in wb.items():
                     if k2 == "native":
                         aid = self.asset_id("native", chain, None,
-                                            symbol=self.native_sym.get(chain, chain.upper()),
-                                            decimals=9 if chain == "sol" else 18)
+                                            symbol=self.native_sym.get(chain, chain_registry.native_symbol(chain, chain.upper())),
+                                            decimals=9 if chain == "sol" else chain_registry.native_decimals(chain, 18))
                     else:
                         hint = meta_hint.get(addr, (None, None))
                         aid = self.asset_id("token", chain, addr, symbol=hint[0], decimals=hint[1])
@@ -3500,7 +3805,7 @@ class Core:
 
     def _streams_have_data(self) -> bool:
         for stream, reader in (("evm", self.reader), ("sol", self.sol_reader),
-                               ("bsc", self.bsc_reader)):
+                               ("bsc", self.bsc_reader)) + tuple(self.__dict__.get("chain_readers") or ()):
             row = self.conn.execute(
                 "SELECT seg, off FROM inbox_offsets WHERE stream=?", (stream,)).fetchone()
             seg, off = (row["seg"], row["off"]) if row else (1, 0)
@@ -6470,7 +6775,8 @@ class Core:
         tx = snap.get("tx") or {}
         if not tx or tx.get("synth") or snap.get("src"):
             return False
-        return all(isinstance(r, dict) and set(r) <= cls._ES_TT_KEYS for r in snap.get("token_transfers") or []) \
+        return all(isinstance(r, dict) and (set(r) <= cls._ES_TT_KEYS or (not isinstance(r.get("from"), dict) and set(r) - {"log_index"} <= cls._ES_TT_KEYS))
+                   for r in snap.get("token_transfers") or []) \
             and all(isinstance(r, dict) and set(r) <= cls._ES_IT_KEYS for r in snap.get("internal") or [])
 
     @classmethod
@@ -6759,7 +7065,8 @@ class Core:
         row = self.conn.execute("SELECT snapshot FROM raw_txs WHERE chain=? AND txhash=?", (chain, txhash)).fetchone()
         try:
             snap9 = json.loads(row["snapshot"]) if row else {}
-            return self._ts_of(snap9.get("ts") if chain == "sol" else (snap9.get("tx") or {}).get("timestamp")) if isinstance(snap9, dict) else None
+            return self._ts_of(snap9.get("ts") if (chain == "sol" or snap9.get("kind") == chain_event.KIND)
+                               else (snap9.get("tx") or {}).get("timestamp")) if isinstance(snap9, dict) else None
         except (TypeError, ValueError, AttributeError):
             return None
 
@@ -6796,7 +7103,8 @@ class Core:
         row = self.conn.execute("SELECT snapshot FROM raw_txs WHERE chain=? AND txhash=?", (chain, txhash)).fetchone()
         try:
             snap9 = json.loads(row["snapshot"]) if row else {}
-            ts = self._ts_of(snap9.get("ts") if chain == "sol" else (snap9.get("tx") or {}).get("timestamp")) if isinstance(snap9, dict) else None
+            ts = self._ts_of(snap9.get("ts") if (chain == "sol" or snap9.get("kind") == chain_event.KIND)
+                             else (snap9.get("tx") or {}).get("timestamp")) if isinstance(snap9, dict) else None
         except (TypeError, ValueError, AttributeError):
             ts = None
         if ts is None:
@@ -6940,6 +7248,124 @@ class Core:
         self._bump_position(aid, comp, loc)
         log.info("★[%s] %s 재기장 — 대사 앵커(%s) %s 칸 보정 %d → %d (앵커가 흡수한 T 이전 흐름과 이중 계상 방지)★",
                  chain, txhash[:14], sid, loc.split(":", 2)[2][:10], q0, nq)
+
+    def own_overlap_repair(self, apply: bool = False, chain: str = None) -> list:
+        applied = sorted(r["k"][len("outflow_applied:"):] for r in self.conn.execute(
+            "SELECT k, v FROM meta WHERE k >= 'outflow_applied:' AND k < 'outflow_applied;'").fetchall() if str(r["v"]).startswith("own:1"))
+        out = []
+        if not applied:
+            return out
+        try:
+            for ch in sorted(self.my_wallets):
+                if ch == "sol" or (chain and ch != chain):
+                    continue
+                mine = self.my_wallets.get(ch) or set()
+                T_full, ws_full = self._recon_view(ch)
+                wtimes = self._wrecon_times(ch)
+                pre9 = {r[0].split(":", 2)[2] for r in self.conn.execute(
+                    "SELECT k FROM meta WHERE k >= ? AND k < ?", (f"ext_prewindow_tx:{ch}:", f"ext_prewindow_tx:{ch};")).fetchall()}
+                for a in applied:
+                    if a not in mine:
+                        continue
+                    loc = f"wallet:{ch}:{a}"
+                    sids = []
+                    if T_full and a in ws_full:
+                        sids.append((f"recon:{ch}", int(T_full), None))
+                    wt3 = wtimes.get(a)
+                    if wt3 and wt3[0]:
+                        sids.append((f"recon:{ch}:{a}", int(wt3[0]), "token" if wt3[2] else None))
+                    if wt3 and wt3[2] and wt3[1]:
+                        sids.append((f"recon:{ch}:{a}:native", int(wt3[1]), "native"))
+                    if not sids:
+                        continue
+                    rx = self.conn.execute(
+                        "SELECT p.source_id, p.event_ts, p.asset_id, p.qty_base, r.ingested_at, r.block, r.wallets FROM postings p"
+                        " JOIN raw_txs r ON r.chain=p.source_ns AND r.txhash=p.source_id WHERE p.location=? AND p.source_kind='chain_tx'"
+                        " AND p.source_ns=? AND p.leg_kind='move_in' AND p.event='TRANSFER_SELF'", (loc, ch)).fetchall()
+                    for sid, T, scope in sids:
+                        R, R_all, t_rx = {}, {}, {}
+                        for p in rx:
+                            if p["source_id"] in pre9 or not self._absorbed(sid, int(p["event_ts"]), T, p["block"]):
+                                continue
+                            R_all[p["asset_id"]] = R_all.get(p["asset_id"], 0) + int(p["qty_base"])
+                            t_rx[p["asset_id"]] = min(t_rx.get(p["asset_id"], int(p["event_ts"])), int(p["event_ts"]))
+                            try:
+                                persp = {str(x).lower() for x in (json.loads(p["wallets"] or "[]") or [])}
+                            except (TypeError, ValueError):
+                                continue
+                            if a in persp or p["ingested_at"] is None or int(p["ingested_at"]) >= T:
+                                continue
+                            R[p["asset_id"]] = R.get(p["asset_id"], 0) + int(p["qty_base"])
+                        if not any(R_all.values()):
+                            continue
+                        r9 = self.conn.execute("SELECT payload FROM raw_observations WHERE obs_id=?", (sid,)).fetchone()
+                        try:
+                            d9 = json.loads(r9[0]) if r9 and r9[0] else {}
+                        except (TypeError, ValueError):
+                            d9 = {}
+                        wp = {}
+                        for k9, v9 in (d9.items() if isinstance(d9, dict) else ()):
+                            if isinstance(v9, dict) and str(k9).lower() == a:
+                                wp = {str(x).lower(): y for x, y in v9.items()}
+                        for aid in sorted(R_all):
+                            if not R_all[aid]:
+                                continue
+                            a9 = self.conn.execute("SELECT kind, address, symbol FROM assets WHERE asset_id=?", (aid,)).fetchone()
+                            is_nat = bool(a9 and a9["kind"] == "native")
+                            if (scope == "token" and is_nat) or (scope == "native" and not is_nat):
+                                continue
+                            key = "native:none" if is_nat else f"token:{str((a9['address'] if a9 else '') or '').lower()}"
+                            if key not in wp or (not is_nat and not self._obs_tok_observed(sid, a, a9["address"])):
+                                continue
+                            v9 = wp[key]
+                            try:
+                                bobs = None if isinstance(v9, (bool, float)) else int(v9)
+                            except (TypeError, ValueError):
+                                bobs = None
+                            anc = F = 0
+                            other9 = False
+                            for q in self.conn.execute(
+                                    "SELECT p.source_kind, p.source_ns, p.source_id, p.qty_base, p.event_ts, r.block FROM postings p"
+                                    " LEFT JOIN raw_txs r ON p.source_kind='chain_tx' AND r.chain=p.source_ns AND r.txhash=p.source_id"
+                                    " WHERE p.location=? AND p.asset_id=?", (loc, aid)).fetchall():
+                                qb = int(q["qty_base"])
+                                if q["source_kind"] == "opening" and q["source_ns"] == ch and q["source_id"] == sid:
+                                    anc += qb
+                                    continue
+                                if q["source_kind"] == "opening" and qb:
+                                    other9 = True
+                                if q["source_kind"] == "chain_tx":
+                                    if q["source_id"] not in pre9 and self._absorbed(sid, int(q["event_ts"]), T, q["block"]):
+                                        F += qb
+                                elif int(q["event_ts"]) < T:
+                                    F += qb
+                            D = None if bobs is None else anc - (bobs - F)
+                            fixq = None
+                            if D is not None and D != 0 and not other9:
+                                fixq = R.get(aid) if (R.get(aid) and D == R.get(aid)) else (R_all[aid] if D == R_all[aid] else None)
+                            act = "skip" if D is None else ("ok" if D == 0 else ("fix" if fixq else "skip"))
+                            out.append({"chain": ch, "wallet": a, "sid": sid, "asset_id": aid, "symbol": (a9["symbol"] if a9 else None),
+                                        "observed": None if bobs is None else str(bobs), "anchor": str(anc),
+                                        "expected": None if bobs is None else str(bobs - F), "extra": None if D is None else str(D),
+                                        "recv": str(fixq if fixq else R_all[aid]), "other_anchor": other9, "action": act})
+                            if act == "fix" and apply:
+                                outer9 = self.__dict__.get("_anchor_touch")
+                                touch9 = []
+                                self._anchor_touch = touch9
+                                try:
+                                    self._anchor_adjust(ch, sid, T, aid, loc, -fixq, "own_overlap")
+                                finally:
+                                    self._anchor_touch = outer9
+                                self._hist_anchor_mark(ch, "own_overlap", touch9 + [t_rx.get(aid)])
+                                log.warning("★own 중복 복구 [%s] %s %s — 기초 잔고 %d → %d(받은 레그와 겹친 양 %d)★",
+                                            ch, a[:10], (a9["symbol"] if a9 else aid), anc, anc - fixq, fixq)
+            if apply:
+                self.conn.commit()
+        except Exception:
+            if apply:
+                self.conn.rollback()
+            raise
+        return out
 
     def _rpc_touch(self, chain: str, txhash: str, old_snap: dict, new_u: dict, q_new: str, rpc_old: bool):
         if q_new != "rpc_basic" or rpc_old or common.ZK_STACK.get(chain):
@@ -7205,6 +7631,8 @@ class Core:
                 self._tsfix_sol(rec)
             elif rec.get("repersp"):
                 self._rederive_sol_anchor_safe(rec)
+        elif rec.get("kind") == chain_event.KIND:
+            self._consume_chain_delta(rec)
         elif rec.get("kind") == "ex_snapshot":
             self._consume_ex(rec)
         elif rec.get("kind") == "ex_fills":
@@ -8096,7 +8524,8 @@ class Core:
         drop = [f9 for f9 in olds if f9 not in keep9]
         res9 = ledger_backup.swap_in(live, tmp, live + f".pre_extrebuild_{ts}", log=log)
         kept9 = (res9 or {}).get("kept")
-        ok9, why9 = ledger_backup.ledger_check_light(kept9) if kept9 and os.path.isfile(kept9) else (False, "이번 보존본 없음")
+        st9, why9 = ledger_backup.restore_state(kept9, deep=False) if kept9 and os.path.isfile(kept9) else ("invalid", "이번 보존본 없음")
+        ok9 = st9 == "valid"
         if ok9:
             for f9 in drop:
                 for sfx in ("", "-wal", "-shm"):
@@ -8177,7 +8606,7 @@ class Core:
                 log.warning("늦은 원장 행 커서 울타리 초기화 실패(%d/%d — 잠시 뒤 다시): %s", i9 + 1, self.HL_FENCE_TRIES, common.safe_err(str(e))[:200])
                 time.sleep(float(self.HL_FENCE_SLEEP))
         streams = (("evm", self.reader), ("sol", self.sol_reader), ("bsc", self.bsc_reader),
-                   ("ex", self.ex_reader))
+                   ("ex", self.ex_reader)) + tuple(self.chain_readers)
         offs = {}
         for stream, _ in streams:
             row = self.conn.execute(

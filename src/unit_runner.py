@@ -15,6 +15,11 @@ import settings_store as ss
 import ledger_backup
 
 SCRIPTS = {"evm": "evm_watch.py", "sol": "sol_watch.py", "bsc": "bsc_watch.py", "core": "core.py", "web": "web.py"}
+try:
+    import chain_registry as _reg
+    SCRIPTS.update({c: _reg.SPECS[c].module + ".py" for c in _reg.CHAINS})
+except Exception:
+    pass
 CHECK_SEC = float(os.environ.get("TJ_RUNNER_CHECK_SEC", "15"))
 SETTLE_SEC = float(os.environ.get("TJ_RUNNER_SETTLE_SEC", "10"))
 STOP_GRACE = 20
@@ -166,7 +171,7 @@ def _on_signal(sig, _frm):
 def main():
     unit = sys.argv[1] if len(sys.argv) > 1 else ""
     if unit not in SCRIPTS:
-        raise SystemExit("사용법: unit_runner.py evm|sol|bsc|core|web")
+        raise SystemExit("사용법: unit_runner.py " + "|".join(SCRIPTS))
     common.ensure_dirs()
     _secure_state_dir()
     signal.signal(signal.SIGINT, _on_signal)

@@ -14,16 +14,16 @@ app = open(APP, encoding="utf-8").read()
 print("[1] 정적")
 i9 = app.find("    ofWaitGo: () => {")
 ow = app[i9:app.find("\n", i9)] if i9 >= 0 else ""
-T.chk("uiPgReset('ofh')" in ow and "delete S.uiMore.ofh" in ow, "ofWaitGo(세일 참가금만 보기) = 정리 내역 쪽 처음으로(UI_PICK.ofReason 과 같게)", ow[:200])
+T.chk("uiPgReset('ofh')" in ow and "S.uiMore" not in app, "ofWaitGo(세일 참가금만 보기) = 정리 내역 쪽 처음으로(UI_PICK.ofReason 과 같게) · pg19: 옛 앞 n개 상태(S.uiMore) 없음", ow[:200])
 for k in ("attdRc", "attdLp", "attdFr", "attdCoin"):
     j9 = app.find("      " + k + ": el => {")
     ln = app[j9:app.find("\n", j9)] if j9 >= 0 else ""
     T.chk("uiSheetCloseThen(" in ln and "uiSheetClose(true)" not in ln, "분해 시트 %s = 시트 기록 칸을 걷은 뒤 이동(uiSheetCloseThen)" % k, ln[:160])
 T.chk("function uiSheetCloseThen(then) {" in app, "uiSheetCloseThen 정의(뒤로가기가 끝난 뒤 then — closeDrawerThen 과 같은 규약)")
-T.chk("const units = uiPgUnits(rows, r => !!r.sub)" in app and "uiPgSlice('hold', units, H0, 20)" in app and "uiPgBar('hold', units.length, H0, 20" in app,
+T.chk("const units = uiPgUnits(rows, r => !!r.sub)" in app and "uiPgSlice('hold', units)" in app and "uiPgBar('hold', units.length, { unit: '종' })" in app,
       "보유표 쪽 = 코인 묶음 단위(본행 + Rabby 하위 행)")
-T.chk("uiPgSlice('zero', z, 20, 20)" in app and "uiPgBar('zero', z.length, 20, 20" in app and "uiPgReveal('zero'," in app,
-      "값 없는 토큰 = 20개씩 쪽 · 찾아가기 = 그 쪽(uiPgReveal)")
+T.chk("uiPgSlice('zero', z)" in app and "uiPgBar('zero', z.length, {" in app and "uiPgReveal('zero'," in app,
+      "값 없는 토큰 = 설정 쪽 크기씩 쪽 · 찾아가기 = 그 쪽(uiPgReveal)")
 
 print("[2] 화면 함수(node)")
 JS = r'''import fs from 'node:fs';
@@ -39,7 +39,7 @@ const history = { get state() { return H.st[H.i].s; },
   pushState(s) { H.st = H.st.slice(0, H.i + 1); H.st.push({ s }); H.i++; }, replaceState(s) { H.st[H.i] = { s }; },
   back() { if (H.i > 0) { H.i--; const s = H.st[H.i].s; setTimeout(() => H.L.slice().forEach(f => f({ state: s })), 0); } } };
 const window = { addEventListener: (t, f) => { if (t === 'popstate') H.L.push(f); }, removeEventListener: (t, f) => { H.L = H.L.filter(x => x !== f); } };
-const S = { sheet: null, drawer: null, pop: null, uiPg: {}, uiMore: {}, of: {}, hold: { mode: 'all', showZero: true }, D: null };
+const S = { sheet: null, drawer: null, pop: null, uiPg: {}, uiMore: {}, of: {}, hold: { mode: 'all', showZero: true }, D: null, pgSz: 20 };   // ui18: 아래 종전 검사 = 쪽 크기 20(종전 그대로)
 const UI_SHEETS = { attd: () => '' };
 const document = { querySelectorAll: () => [], activeElement: null };
 const location = { href: 'https://tj.invalid/#dash', pathname: '/', search: '' };
@@ -48,7 +48,7 @@ const deps = { S, UI_SHEETS, history, window, document, location, esc, renderOve
   uiHas: (o, k) => Object.prototype.hasOwnProperty.call(o, k), uiReduce: () => true, getComputedStyle: () => ({ getPropertyValue: () => '' }),
   q: v => String(v), m: v => '$' + v, locH: s => '<span class="pvl">' + esc(s) + '</span>' };
 const B = [cut('  function uiSheetOpen(k, v, t, el) {', '  function uiSheetHTML() {'), line("  window.addEventListener('popstate', ev => { if (S.sheet"), line('  function drawerHist() {'),
-  cut('  const uiLim = (key, n)', '  const uiHidChip = '), cut('  function zeroFoldHTML() {', '  const holdTh = (k, label, x) =>')].join('\n');
+  cut('  const uiWrapBtn = (b, o) =>', '  const uiHidChip = '), cut('  function zeroFoldHTML() {', '  const holdTh = (k, label, x) =>')].join('\n');
 const acts = ['attdRc', 'attdCoin', 'attdFr'].map(k => line('      ' + k + ': el => {').trim().replace(/,$/, '')).join(',\n');
 const ow = line('    ofWaitGo: () => {').trim().replace(/,(\s*\/\/.*)?$/, '');
 const names = Object.keys(deps);
@@ -63,10 +63,10 @@ A.receipt = () => { const first = S.drawer !== 'rcpt'; S.drawer = 'rcpt'; if (fi
 const tick = () => new Promise(r => setTimeout(r, 20));
 (async () => {
   // ofWaitGo
-  S.uiPg = { ofh: 3, ofp: 2 }; S.uiMore = { ofh: 60 }; S.of = { view: 'pending', reason: '', period: '30d', coin: 'ETH', limit: 90 };
+  S.uiPg = { ofh: 3, ofp: 2 }; S.of = { view: 'pending', reason: '', period: '30d', coin: 'ETH', limit: 90 };
   F.ACT.ofWaitGo();
-  chk(S.uiPg.ofh === 0 && S.uiPg.ofp === 2 && !('ofh' in S.uiMore) && S.of.reason === '세일 참가금' && S.of.view === 'history',
-    "세일 참가금만 보기 = 정리 내역(ofh) 첫 쪽 · 다른 목록 쪽 그대로", { pg: S.uiPg, more: S.uiMore });
+  chk(S.uiPg.ofh === 0 && S.uiPg.ofp === 2 && S.of.reason === '세일 참가금' && S.of.view === 'history',
+    "세일 참가금만 보기 = 정리 내역(ofh) 첫 쪽 · 다른 목록 쪽 그대로", { pg: S.uiPg });
   // 분해 시트 → 차익 영수증 → 뒤로
   const base = H.i;
   F.uiSheetOpen('attd', 'd|10-10|rz', '현물 실현', null);
@@ -91,26 +91,42 @@ const tick = () => new Promise(r => setTimeout(r, 20));
   const U = F.uiPgUnits ? F.uiPgUnits(HR, r => !!r.sub) : null;
   S.uiPg = { hold: 0 };
   const flat = s => s.rows.reduce((a, u) => a.concat(u), []);
-  const p0 = U ? flat(F.uiPgSlice('hold', U, 15, 20)) : [];
-  S.uiPg.hold = 1; const p1 = U ? flat(F.uiPgSlice('hold', U, 15, 20)) : [];
+  const p0 = U ? flat(F.uiPgSlice('hold', U)) : [];
+  S.uiPg.hold = 1; const p1 = U ? flat(F.uiPgSlice('hold', U)) : [];
   chk(U && U.length === 30 && p0.length === 21 && p0[19].g.key === 'C19' && p0[20].g.key === '#rb:C19' && p1[0].g.key === 'C20' && !p1.some(r => r.sub),
     'Rabby 하위 행 = 본행(C19 · 20번째)과 같은 첫 쪽(본행 20 + 하위 1) · 둘째 쪽은 C20 부터', U && { n: U.length, p0: p0.slice(-2).map(r => r.g.key), p1: p1.slice(0, 1).map(r => r.g.key) });
   S.uiPg = {}; const hp = k => r => !!r && !!r.g && r.g.key === k, F9 = hp('#rb:C19');
   F.uiPgReveal('hold', u => Array.isArray(u) && u.some(F9));
-  const pr = U ? flat(F.uiPgSlice('hold', U, 15, 20)) : [];
+  const pr = U ? flat(F.uiPgSlice('hold', U)) : [];
   chk(U && S.uiPg.hold === 0 && pr.some(r => r.g.key === '#rb:C19'), '찾아가기(Rabby 하위 행 키) = 그 묶음 쪽(첫 쪽)', S.uiPg);
   // 값 없는 토큰 45개
   S.D = { zeroInst: Array.from({ length: 45 }, (_, i) => ({ sym: 'Z' + i, key: 'k' + i, chain: 'Base', where: [], qty: i + 1, cost: 0 })) };
   S.uiPg = {}; S.hold = { mode: 'all', showZero: true };
   let h = F.zeroFoldHTML();
   const zi = h0 => (h0.match(/class="zi"/g) || []).length;
-  chk(zi(h) === 20 && /data-a="uiPgOpen" data-v="zero">45개 모두 보기/.test(h) && /data-pga="zero"/.test(h), "값 없는 토큰 45개 펼침 = 앞 20개 + '45개 모두 보기'(종전 45개 한 번에)", zi(h));
+  chk(zi(h) === 20 && /1–20 <span class="mut">\/ 45<span class="upgu">개/.test(h) && /data-a="uiPg" data-v="zero" data-p="1" aria-label="다음 쪽"/.test(h) && !/uiPgOpen|uiPgClose|모두 보기/.test(h) && /data-pga="zero"/.test(h),
+    "pg19: 값 없는 토큰 45개 펼침 = 바로 1–20 / 45 + '다음'(종전 앞 20개 + '45개 모두 보기' · 그 전엔 45개 한 번에) · 접기 단추 없음", zi(h));
   S.uiPg.zero = 1; h = F.zeroFoldHTML();
   chk(zi(h) === 20 && /21–40/.test(h) && /data-anc="zcoin:Z20"/.test(h) && !/data-anc="zcoin:Z19"/.test(h), '둘째 쪽 = 21–40(Z20~Z39)', zi(h));
   S.uiPg = {}; F.uiPgReveal('zero', x => !!x && String(x.sym).toUpperCase() === 'Z42'); h = F.zeroFoldHTML();
   chk(S.uiPg.zero === 2 && /data-anc="zcoin:Z42"/.test(h), '찾아가기(심볼 Z42) = 셋째 쪽', S.uiPg);
+  S.D = { zeroInst: S.D.zeroInst.slice(0, 20) }; S.uiPg = {}; h = F.zeroFoldHTML();
+  chk(zi(h) === 20 && !/upg|upga|umore/.test(h), '딱 한 쪽(20개 · 쪽 크기 20) = 쪽 바·앵커 없음', h.slice(-160));
+  S.D = { zeroInst: Array.from({ length: 45 }, (_, i) => ({ sym: 'Z' + i, key: 'k' + i, chain: 'Base', where: [], qty: i + 1, cost: 0 })) };
   S.hold.showZero = false; h = F.zeroFoldHTML();
   chk(zi(h) === 0 && /값 없는 토큰/.test(h), '접힘 = 머리 한 줄만', h.slice(0, 80));
+  // ui18: 쪽 크기 10(기본)
+  S.pgSz = 10; S.uiPg = {}; S.hold = { mode: 'all', showZero: true }; h = F.zeroFoldHTML();
+  chk(zi(h) === 10 && /1–10 <span class="mut">\/ 45/.test(h) && !/uiPgOpen|모두 보기/.test(h) && /data-pga="zero"/.test(h), "쪽 크기 10: 값 없는 토큰 펼침 = 바로 1–10 / 45 + 앵커(pg19)", zi(h));
+  S.uiPg.zero = 1; h = F.zeroFoldHTML();
+  chk(zi(h) === 10 && /11–20/.test(h) && /data-anc="zcoin:Z10"/.test(h) && !/data-anc="zcoin:Z20"/.test(h), '쪽 크기 10: 둘째 쪽 = 11–20', zi(h));
+  S.uiPg = {}; F.uiPgReveal('zero', x => !!x && String(x.sym).toUpperCase() === 'Z42'); h = F.zeroFoldHTML();
+  chk(S.uiPg.zero === 4 && /data-anc="zcoin:Z42"/.test(h), '쪽 크기 10: 찾아가기(Z42) = 다섯째 쪽', S.uiPg);
+  const HR2 = Array.from({ length: 30 }, (_, i) => ({ g: { key: 'C' + i } })); HR2.splice(10, 0, { g: { key: '#rb:C9' }, sub: true });
+  const U2 = F.uiPgUnits ? F.uiPgUnits(HR2, r => !!r.sub) : null;
+  S.uiPg = { hold: 0 }; const r0 = U2 ? flat(F.uiPgSlice('hold', U2)) : []; S.uiPg.hold = 1; const r1 = U2 ? flat(F.uiPgSlice('hold', U2)) : [];
+  chk(U2 && r0.length === 11 && r0[9].g.key === 'C9' && r0[10].g.key === '#rb:C9' && r1[0].g.key === 'C10', '쪽 크기 10: Rabby 하위 행 = 10번째 본행(C9)과 같은 첫 쪽 · 둘째 쪽 C10 부터', r0.slice(-2).map(r => r.g.key));
+  S.pgSz = 20;
   for (const [ok, msg, d] of R) console.log((ok ? 'PASS ' : 'FAIL ') + msg + (ok || d === undefined ? '' : '  — ' + JSON.stringify(d).slice(0, 600)));
   console.log('RESULT ' + R.filter(x => x[0]).length + '/' + R.length);
 })().catch(e => { console.log('FAIL 실행 오류 ' + (e && e.stack || e)); console.log('RESULT 0/1'); });

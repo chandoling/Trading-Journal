@@ -83,6 +83,43 @@ def _num(v):
     return n if n > 0 else None
 
 
+_ORD_HEX = re.compile(r"0[xX][0-9a-fA-F]+")
+_ORD_DEC = re.compile(r"[0-9]+")
+
+
+def ord_index(v):
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        n = v
+    elif isinstance(v, str):
+        s = v.strip()
+        if _ORD_HEX.fullmatch(s):
+            n = int(s, 16)
+        elif _ORD_DEC.fullmatch(s):
+            n = int(s)
+        else:
+            return None
+    else:
+        return None
+    return n if 0 <= n < 2 ** 63 else None
+
+
+def tx_position(tx, rc=None):
+    tx = tx if isinstance(tx, dict) else {}
+    rc = rc if isinstance(rc, dict) else {}
+    a9, b9 = tx.get("blockHash"), rc.get("blockHash")
+    if isinstance(a9, str) and isinstance(b9, str) and a9 and b9 and a9.lower() != b9.lower():
+        return None
+    a9, b9 = ord_index(tx.get("blockNumber")), ord_index(rc.get("blockNumber"))
+    if a9 is not None and b9 is not None and a9 != b9:
+        return None
+    p_rc, p_tx = ord_index(rc.get("transactionIndex")), ord_index(tx.get("transactionIndex"))
+    if p_rc is not None and p_tx is not None and p_rc != p_tx:
+        return None
+    return p_rc if p_rc is not None else p_tx
+
+
 def retention_bounds(msg) -> tuple:
     s = str(msg or "")
     for rx in _RETENTION_RES:
@@ -234,20 +271,50 @@ def rpc_fail_class(e, block: int = None, head=None) -> str:
     return "permanent"
 
 
+_CN_BACKOFF_RE = re.compile(r"backoff_seconds[\"']?\s*[:=]\s*[\"']?(\d{1,5}(?:\.\d+)?)", re.I)
+
+
+def _cn_backoff(text):
+    m = _CN_BACKOFF_RE.search(str(text or ""))
+    try:
+        return min(3600.0, max(0.0, float(m.group(1)))) if m else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _cn_rpc_err(err, raw):
+    try:
+        txt = (raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)).lower()
+    except (TypeError, ValueError):
+        txt = str(raw).lower()
+    code9 = getattr(err, "code", None)
+    if "errprojectratelimitrule" in txt or "rate-limit" in txt or (code9 == -32005 and "rate" in txt):
+        e9 = NetError(str(err), "http429", code=code9, retry_after=_cn_backoff(txt), host=getattr(err, "host", None))
+        e9.persec = False
+        return e9
+    if ("transaction not found" in txt and "errupstreamsexhausted" in txt) or "does not have the requested block" in txt:
+        return NetError(f"{str(err)[:200]} — historical state unavailable on this provider", "pruned", code=code9, host=getattr(err, "host", None))
+    return err
+
+
 def classify_exc(e: BaseException, host: str = None, body_bytes: bytes = None) -> NetError:
     if isinstance(e, NetError):
         return e
     if isinstance(e, urllib.error.HTTPError):
         code = e.code
         body = ""
+        rb9 = b""
         try:
-            body = ((body_bytes if body_bytes is not None else e.read(HTTP_ERR_MAX_BYTES)) or b"")[:300].decode("utf-8", "replace")
+            rb9 = (body_bytes if body_bytes is not None else e.read(HTTP_ERR_MAX_BYTES)) or b""
+            body = rb9[:300].decode("utf-8", "replace")
         except Exception:
             pass
         ra = retry_after_sec(e.headers.get("Retry-After") if e.headers else None)
         msg = f"HTTP Error {code}: {e.reason}" + (f" ({body.strip()[:120]})" if body.strip() else "")
         if code == 429:
             kind = "quota" if ("max usage" in body.lower() or "quota" in body.lower()) else "http429"
+            if ra is None and str(host or "").endswith(".chainnodes.org"):
+                ra = _cn_backoff(rb9[:HTTP_ERR_MAX_BYTES].decode("utf-8", "replace"))
             return NetError(msg, kind, code=code, retry_after=ra, host=host)
         if 500 <= code < 600:
             return NetError(msg, "http5xx", code=code, retry_after=ra, host=host)
@@ -301,7 +368,8 @@ HOST_POLICIES = {
     "*.quiknode.pro": {"rate": 5.0, "burst": 5, "conc": 3, "call_rate": 10.0, "call_burst": 10,
                        "share": "node_quicknode", "share_rate": 10.0, "share_burst": 10, "share_xproc": True},
     "*.g.alchemy.com": {"rate": 2.0, "burst": 2, "conc": 2, "call_rate": 2.0, "call_burst": 2,
-                        "share": "node_alchemy", "share_rate": 2.0, "share_burst": 2, "share_xproc": True},
+                        "share": "node_alchemy", "share_rate": 2.0, "share_burst": 2, "share_xproc": True,
+                        "call_cost": {"alchemy_getAssetTransfers": 2}},
     "rpc.ankr.com#adv": {"rate": 0.6, "burst": 2, "conc": 1, "call_rate": 0.6, "call_burst": 2,
                          "share": "node_ankr_adv", "share_rate": 0.6, "share_burst": 2, "share_xproc": True},
     "bsc.rpc.blxrbdn.com": {"rate": 2.0, "burst": 2, "conc": 2},
@@ -334,6 +402,7 @@ BREAKER_BASE = 15.0
 BREAKER_MAX = 600.0
 OPEN_WAIT = 30.0
 QUOTA_OPEN = 1800.0
+CN_COOL_MAX = 3600.0
 
 
 def _pol_num(v, default, typ, lo, hi):
@@ -483,6 +552,8 @@ class HostGate:
         self.c_last = time.monotonic()
         sh9 = str(pol.get("share") or "").strip().lower()
         self.share = _share_bucket(sh9, pol.get("share_rate"), pol.get("share_burst"), bool(pol.get("share_xproc"))) if sh9 else None
+        cc9 = pol.get("call_cost") if isinstance(pol.get("call_cost"), dict) else {}
+        self.call_cost = {str(k): _pol_num(v, 1, int, 1, 100) for k, v in cc9.items()}
 
     def _wait_needed(self, prio: str, cost: int = 1) -> float:
         now_m = time.monotonic()
@@ -515,6 +586,11 @@ class HostGate:
         if self.share is not None and self.share.rate:
             cap = max(1, min(cap, int(self.share.burst)))
         return cap
+
+    def gate_cost(self, cost: int = 1, methods=None) -> int:
+        if not self.call_cost or not methods:
+            return cost
+        return max(int(cost or 1), sum(self.call_cost.get(str(m), 1) for m in methods))
 
     def acquire(self, prio: str = "fg", deadline: float = None, cost: int = 1):
         if deadline is None and isinstance(self.share, _XprocSharedBucket):
@@ -600,6 +676,10 @@ class HostGate:
                 self.open_count += 1
                 return
             if err.kind == "http429":
+                if err.retry_after is not None and self.host.endswith(".chainnodes.org"):
+                    self.pause_until = max(self.pause_until, now + min(float(err.retry_after), CN_COOL_MAX))
+                    self.open_until = max(self.open_until, self.pause_until)
+                    return
                 ra = err.retry_after if err.retry_after is not None else 10.0 * (1 + random.random())
                 self.pause_until = max(self.pause_until, now + min(ra, 120.0))
             if err.kind == "http5xx" and not count_5xx:
@@ -2096,6 +2176,11 @@ def configure(cfg: dict):
     helius_configure(cfg)
     rpc_day_configure(cfg)
     sol_meter_configure(cfg)
+    try:
+        import nodesel
+        nodesel.configure(cfg)
+    except Exception:
+        pass
     bf = (cfg or {}).get("backfill") or {}
     _POLICY_OVERRIDES.clear()
     for h, p in (bf.get("hosts") or {}).items():
@@ -2189,6 +2274,7 @@ RETRYABLE = ("http429", "http5xx", "timeout", "conn", "dns", "payload")
 
 
 def _open(req, timeout):
+    _ns_mark()
     return sol_open(req, timeout)
 
 
@@ -2204,11 +2290,21 @@ def _resp_sock(r):
     return None
 
 
-def _read_capped(r, n: int, t_end: float = None) -> bytes:
+def _read_capped(r, n: int, t_end: float = None, idle: float = None) -> bytes:
     rd1 = getattr(r, "read1", None)
     sk = _resp_sock(r) if t_end is not None else None
     if sk is None or not callable(rd1):
         return r.read(n)
+    try:
+        to0 = sk.gettimeout()
+    except OSError:
+        to0 = None
+    try:
+        idle9 = float(idle) if idle is not None else to0
+    except (TypeError, ValueError):
+        idle9 = to0
+    if idle9 is not None and not idle9 > 0:
+        idle9 = None
     buf = bytearray()
     cut9 = threading.Event()
     tm9 = None
@@ -2228,7 +2324,7 @@ def _read_capped(r, n: int, t_end: float = None) -> bytes:
             if rem <= 0:
                 raise socket.timeout(f"응답 본문 수신 절대 마감 초과({len(buf):,}바이트 받음)")
             try:
-                sk.settimeout(rem)
+                sk.settimeout(rem if idle9 is None else min(idle9, rem))
             except OSError:
                 pass
             ch = rd1(min(65536, n - len(buf)))
@@ -2243,6 +2339,10 @@ def _read_capped(r, n: int, t_end: float = None) -> bytes:
         if tm9 is not None:
             tm9.cancel()
             tm9.join(1.0)
+        try:
+            sk.settimeout(to0)
+        except (OSError, ValueError):
+            pass
     if cut9.is_set():
         raise socket.timeout(f"응답 본문 수신 절대 마감 초과({len(buf):,}바이트 받음)")
     return bytes(buf)
@@ -2259,6 +2359,14 @@ def _ankr_adv(url: str, rpc_methods, cost: int):
     if not path.startswith("/multichain"):
         return None, rpc_methods
     return ANKR_ADV_GATE, (rpc_methods if rpc_methods else ["ankr_"] * max(1, int(cost or 1)))
+
+
+def _qn_note(host: str, body=None, err=None) -> None:
+    try:
+        import nodekeys
+        nodekeys.qn_note(host, body=body, err=err)
+    except Exception:
+        pass
 
 
 def http_request(url: str, *, data: bytes = None, headers: dict = None, timeout: float = 25.0,
@@ -2295,7 +2403,7 @@ def http_request(url: str, *, data: bytes = None, headers: dict = None, timeout:
                 _unsent()
                 raise NetError(f"budget: {host} 동시 요청 대기 {max(0.0, st9):.1f}s 초과", "budget", host=host)
         try:
-            g.acquire(prio=prio, deadline=deadline, cost=cost)
+            g.acquire(prio=prio, deadline=deadline, cost=g.gate_cost(cost, rpc_methods))
         except BaseException:
             g.sem.release()
             _unsent()
@@ -2327,7 +2435,7 @@ def http_request(url: str, *, data: bytes = None, headers: dict = None, timeout:
                 ln9 = getattr(r, "length", None)
                 if isinstance(ln9, int) and not isinstance(ln9, bool) and ln9 >= 0:
                     n9 = min(n9, ln9 + 1)
-                raw = _read_capped(r, n9, tb9)
+                raw = _read_capped(r, n9, tb9, to9)
             if rdb9:
                 rpc_day_settle(rd9, len(raw), rdu9, rdd9)
                 rds9 = True
@@ -2343,6 +2451,8 @@ def http_request(url: str, *, data: bytes = None, headers: dict = None, timeout:
                 d = json.loads(raw.decode("utf-8"))
             except (ValueError, UnicodeDecodeError) as e:
                 raise NetError(f"payload: JSON 파싱 불가 ({str(e)[:60]})", "payload", host=host)
+            if host.endswith(".quiknode.pro"):
+                _qn_note(host, body=d)
             g.success()
             return d, None
         except CircuitOpen:
@@ -2351,7 +2461,7 @@ def http_request(url: str, *, data: bytes = None, headers: dict = None, timeout:
             bb9 = None
             if rdb9 and rdd9 is not None and not rds9 and isinstance(e, urllib.error.HTTPError):
                 try:
-                    bb9 = _read_capped(e, min(rdu9, HTTP_ERR_MAX_BYTES) + 1, tb9) or b""
+                    bb9 = _read_capped(e, min(rdu9, HTTP_ERR_MAX_BYTES) + 1, tb9, to9) or b""
                 except Exception:
                     bb9 = None
                 if bb9 is not None and len(bb9) > HTTP_ERR_MAX_BYTES:
@@ -2360,10 +2470,12 @@ def http_request(url: str, *, data: bytes = None, headers: dict = None, timeout:
                     rpc_day_settle(rd9, len(bb9), rdu9, rdd9)
             elif tb9 is not None and isinstance(e, urllib.error.HTTPError):
                 try:
-                    bb9 = _read_capped(e, HTTP_ERR_MAX_BYTES, tb9) or b""
+                    bb9 = _read_capped(e, HTTP_ERR_MAX_BYTES, tb9, to9) or b""
                 except Exception:
                     bb9 = b""
             err = classify_exc(e, host, body_bytes=bb9)
+            if host.endswith(".quiknode.pro"):
+                _qn_note(host, err=err)
             if isinstance(e, urllib.error.HTTPError):
                 g.observe(e.headers)
             _stat(host, err.kind)
@@ -2421,6 +2533,35 @@ def rpc_post(url: str, body, *, timeout: float = 25.0, ua: str = None, retries: 
         raise RpcTransportError(e) from e
 
 
+def _ns_mark():
+    try:
+        _NS[0].mark_dispatch() if _NS[0] else None
+    except Exception:
+        pass
+
+
+def _ns_begin():
+    try:
+        if _NS[0] is None:
+            import nodesel
+            _NS[0] = nodesel
+        return _NS[0].begin()
+    except Exception:
+        return None
+
+
+def _ns_end(url, methods, cost, t0, err=None):
+    if t0 is None or _NS[0] is None:
+        return
+    try:
+        _NS[0].end(url, methods, cost, t0, err)
+    except Exception:
+        pass
+
+
+_NS = [None]
+
+
 RATE_RETRIES = 4
 
 
@@ -2442,13 +2583,23 @@ def rpc_call(url: str, method: str, params, *, timeout: float = 25.0, retries: i
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     host = (urllib.parse.urlsplit(url).hostname or "?").lower()
     for i9 in range(RATE_RETRIES + 1):
-        d = http_json(url, data=body, timeout=timeout, retries=retries, prio=prio, deadline=deadline, rpc_methods=(method,), sem_timeout=sem_timeout)
+        ns9 = _ns_begin()
+        try:
+            d = http_json(url, data=body, timeout=timeout, retries=retries, prio=prio, deadline=deadline, rpc_methods=(method,), sem_timeout=sem_timeout)
+        except NetError as e9:
+            _ns_end(url, (method,), 1, ns9, e9)
+            raise
         if not isinstance(d, dict):
+            _ns_end(url, (method,), 1, ns9, NetError("payload", "payload"))
             raise NetError(f"rpc {method}: 응답 형식 오류 ({type(d).__name__})", "payload", host=host)
         if not d.get("error"):
+            _ns_end(url, (method,), 1, ns9)
             break
         err = classify_rpc_error(d["error"])
         err.host = host
+        if host.endswith(".chainnodes.org"):
+            err = _cn_rpc_err(err, d["error"])
+        _ns_end(url, (method,), 1, ns9, err)
         _stat(host, "rpc_" + err.kind)
         if err.kind in ("http429", "quota"):
             gate(host).failure(err)
@@ -2484,14 +2635,28 @@ def rpc_batch(url: str, calls: list, *, timeout: float = 30.0, retries: int = 2,
     return out
 
 
+def _ns_batch_err(d):
+    if not isinstance(d, list):
+        return NetError("payload", "payload")
+    errs = [it.get("error") for it in d if isinstance(it, dict)]
+    if d and all(errs):
+        try:
+            return classify_rpc_error(errs[0])
+        except Exception:
+            return NetError("rpc", "rpc")
+    return None
+
+
 def _rpc_batch_once(url, calls, timeout, retries, prio, deadline, host, sem_timeout=None) -> list:
     body = json.dumps([{"jsonrpc": "2.0", "id": i, "method": m, "params": p}
                        for i, (m, p) in enumerate(calls)]).encode()
     for i9 in range(RATE_RETRIES + 1):
+        ns9 = _ns_begin()
         try:
             d = http_json(url, data=body, timeout=timeout, retries=retries, prio=prio, deadline=deadline, cost=len(calls),
                           rpc_methods=[m for m, _p in calls], sem_timeout=sem_timeout)
         except NetError as err9:
+            _ns_end(url, [m for m, _p in calls], len(calls), ns9, err9)
             if err9.kind != "range" or not getattr(err9, "results", False) or len(calls) < 2:
                 raise
             mid9 = len(calls) // 2
@@ -2500,12 +2665,14 @@ def _rpc_batch_once(url, calls, timeout, retries, prio, deadline, host, sem_time
         if isinstance(d, dict) and d.get("error"):
             err = classify_rpc_error(d["error"])
             err.host = host
+            _ns_end(url, [m for m, _p in calls], len(calls), ns9, err)
             w9 = _rate_wait(err, i9, deadline) if (_persec(err) and i9 < RATE_RETRIES) else None
             if w9 is None:
                 raise err
             gate(host).failure(err)
             time.sleep(w9)
             continue
+        _ns_end(url, [m for m, _p in calls], len(calls), ns9, _ns_batch_err(d))
         break
     if not isinstance(d, list):
         raise NetError(f"rpc batch: 응답 형식 오류 ({type(d).__name__})", "payload", host=host)
@@ -3295,6 +3462,34 @@ class Progress:
         with self.lock:
             self.items.pop(key, None)
         self.flush()
+
+    def prune(self, pred) -> int:
+        try:
+            with open(self.path + ".lock", "a+") as lk:
+                fcntl.flock(lk.fileno(), fcntl.LOCK_EX)
+                try:
+                    with self.lock:
+                        mine = set(self.items)
+                    try:
+                        with open(self.path, "r", encoding="utf-8") as f:
+                            cur = json.load(f)
+                    except (FileNotFoundError, ValueError):
+                        return 0
+                    sec = cur.get(self.unit) if isinstance(cur, dict) else None
+                    if not isinstance(sec, dict):
+                        return 0
+                    drop = [k for k, v in sec.items() if k not in mine and pred(k, v)]
+                    if not drop:
+                        return 0
+                    for k in drop:
+                        sec.pop(k, None)
+                    cur["_updated"] = int(time.time())
+                    common.atomic_write_json(self.path, cur)
+                    return len(drop)
+                finally:
+                    fcntl.flock(lk.fileno(), fcntl.LOCK_UN)
+        except Exception:
+            return 0
 
     def flush(self):
         self._last_flush = time.time()

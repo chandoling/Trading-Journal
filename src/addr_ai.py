@@ -11,6 +11,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
+import chain_registry
 import common
 import sellchart
 import xchain_match as xm
@@ -92,6 +93,8 @@ def fam(addr) -> str | None:
     if _EVM.match(a):
         return "evm"
     if _SOL.match(a) and not a.startswith("0x"):
+        if chain_registry.key_chain(a):
+            return None
         return "sol"
     return None
 

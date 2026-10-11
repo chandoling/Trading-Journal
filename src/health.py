@@ -11,10 +11,12 @@ import shutil
 import socket
 import sqlite3
 import subprocess
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
 import common
+import health_ack
 
 log = logging.getLogger("tj-alert")
 KST = timezone(timedelta(hours=9))
@@ -92,6 +94,7 @@ DEFAULTS = {
         "unreadable_warn_sec": 3600,
         "partial_tg_sec": 86400,
         "vanish_sec": 3600,
+        "quota_persist": 21600, "disc_persist": 86400,
     },
 }
 
@@ -164,6 +167,16 @@ def settings(cfg: dict) -> dict:
             out["optional_units"] = list(out.get("optional_units") or []) + [unit]
     else:
         out["tunnel"] = {}
+    try:
+        import chain_registry as _reg9
+        for c9 in _reg9.configured_chains(cfg or {}):
+            u9 = _reg9.spec(c9).unit
+            if _reg9.available(c9) and u9 not in out["units"] and u9 not in (out.get("ignore_units") or ()):
+                out["units"] = list(out["units"]) + [u9]
+                if u9 not in (out.get("optional_units") or []):
+                    out["optional_units"] = list(out.get("optional_units") or []) + [u9]
+    except Exception:
+        pass
     out["bf_stall_sec"] = float(((cfg or {}).get("backfill") or {}).get("stall_sec") or 3600)
     hb = out.get("heartbeat_url")
     out["heartbeat_url"] = hb.strip() if isinstance(hb, str) and re.fullmatch(r"https?://[^\s]{4,500}", hb.strip()) else ""
@@ -1334,7 +1347,34 @@ def rss_track(st: dict, pm2, now: float, win: float) -> dict:
     return out
 
 
-def collect_balcheck():
+def _disc_ents(disc, cfg) -> dict:
+    try:
+        import token_discovery as td9
+        pairs9 = td9.load_state().get("pairs") or {}
+        if cfg is not None:
+            act9 = {td9.pair_key("bsc" if w.get("type") == "bsc_rpc" else w.get("chain"), w.get("address"))
+                    for w in cfg.get("wallets") or [] if w.get("type", "evm") in ("evm", "bsc_rpc") and w.get("address")}
+            pairs9 = {k: e for k, e in pairs9.items() if k in act9}
+        ents9, nf9, nh9 = {}, 0, 0
+        for k9, e9 in pairs9.items():
+            if not isinstance(e9, dict):
+                continue
+            hard9 = list(td9.hard_fails(e9))
+            if hard9:
+                nf9 += 1
+                ents9.update({f"fail:{k9}:{s9}": None for s9 in hard9})
+            for ca9, why9 in (e9.get("skip") or {}).items():
+                if not td9.skip_final(why9):
+                    nh9 += 1
+                    ents9[f"hold:{k9}:{ca9}"] = None
+        if nf9 != int(disc.get("failPairs") or 0) or nh9 != int(disc.get("hold") or 0):
+            return {}
+        return ents9
+    except Exception:
+        return {}
+
+
+def collect_balcheck(cfg: dict = None):
     p = os.path.join(common.STATE_DIR, "onchain_check.json")
     d = _read(p, None)
     if not isinstance(d, dict):
@@ -1356,7 +1396,7 @@ def collect_balcheck():
             "resolving": len(fixed),
             "errors": len(d.get("errors") or []), "top": top, "items": items,
             "unchecked": d.get("unchecked"), "capped": bool(d.get("capped")), "pairs": d.get("pairs"),
-            "disc": d.get("disc") if isinstance(d.get("disc"), dict) else None}
+            "disc": (dict(d["disc"], ackEnts=_disc_ents(d["disc"], cfg)) if isinstance(d.get("disc"), dict) else None)}
 
 
 BAL_READY_SEC = 86400
@@ -1684,6 +1724,28 @@ def collect_poison():
     except (Exception, SystemExit) as e:
         log.warning("격리 기록 집계 실패: %s", e)
         return {"error": common.safe_err(e)[:160]}
+
+
+def collect_nonevm_gaps(cfg: dict) -> dict:
+    try:
+        import chain_registry as _reg9
+        chains9 = [c9 for c9 in _reg9.configured_chains(cfg or {}) if _reg9.available(c9)]
+    except Exception:
+        return {}
+    out = {}
+    for c9 in chains9:
+        try:
+            import chain_state as _cst9
+            own9 = _reg9.owners(cfg, c9)
+            st9 = _cst9.ChainState(c9, common.STATE_DIR)
+            gs9 = [g9 for g9 in st9.unresolved_gaps() if g9[1].get("owner") in own9]
+            ids9 = {g9[0] for g9 in gs9}
+            why9 = [str(x.get("why") or "") for x in st9.d["gaps"] if isinstance(x, dict) and str(x.get("id")) in ids9]
+            out[c9] = {"n": len(gs9), "why": why9[-1][:160] if why9 else ""}
+        except (Exception, SystemExit) as e:
+            log.warning("[%s] 수집 상태(상세 누락) 읽기 실패: %s", c9, common.safe_err(e)[:160])
+            out[c9] = None
+    return out
 
 
 def _sweep_scope():
@@ -2028,7 +2090,17 @@ DEBT_SRC_KO = {"loan": "담보대출", "margin": "마진", "spot": "현물 음�
 
 def collect_debt(logs, now: float, h: dict):
     S = common.STATE_DIR
-    px = ((_read(os.path.join(S, "spot.json"), {}) or {}).get("usd") or {})
+    sp9 = _read(os.path.join(S, "spot.json"), {}) or {}
+    exu9 = sp9.get("ex_usd") if isinstance(sp9.get("ex_usd"), dict) else {}
+    ext9 = sp9.get("ex_ts") if isinstance(sp9.get("ex_ts"), dict) else {}
+
+    def px_of(ex, a):
+        k9 = f"{ex}:{a}"
+        try:
+            v9, t9 = float(exu9.get(k9) or 0), float(ext9.get(k9) or 0)
+        except (TypeError, ValueError):
+            return None
+        return v9 if 0 < v9 < float("inf") and 0 <= now - t9 <= 3600 else None
     out, from_file = {}, set()
     for p in glob.glob(os.path.join(S, "exf_balances_*.json")):
         ex = os.path.basename(p)[len("exf_balances_"):-5]
@@ -2069,7 +2141,7 @@ def collect_debt(logs, now: float, h: dict):
         out.setdefault((ex, src, a), v)
     rows = []
     for (ex, src, a), q in out.items():
-        pr = 1.0 if a.upper() in STABLE_USD else px.get(a.upper())
+        pr = 1.0 if a.upper() in STABLE_USD else (px_of(ex, a) or px_of(ex, a.upper()))
         rows.append((ex, src, a, q, abs(q) * float(pr) if pr else None))
     rows.sort(key=lambda r: -(r[4] or 0))
     return rows
@@ -2166,7 +2238,8 @@ def _liq_blind_checks(add, st9: dict, now: float) -> None:
                 since=since9, persist=0, resolve=60, notify=False, remind=False, kind="liqblind")
 
 
-RUNNER_KEYS = ("web", "core", "evm", "sol", "bsc", "ex", "exf", "alert")
+RUNNER_KEYS = ("web", "core", "evm", "sol", "bsc", "ex", "exf", "alert",
+               "tron", "sui", "ton", "btc")
 RUNNER_STALE_SEC = 180
 PM2LESS_NO_OK_SEC = 600
 PM2LESS_ALL_SEC = 300
@@ -2249,6 +2322,12 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
 
     def chip(text):
         checks[-1]["chip"] = text
+
+    def ackf(ents):
+        if checks[-1].get("level") == "warn":
+            e9 = health_ack.ent_ids(ents)
+            if e9:
+                checks[-1]["ack"] = e9
 
     def eff_age(cid, base_ts):
         return awake_age(now, base_ts, sleeps)
@@ -2454,7 +2533,7 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
             (f"{hh9}에 Helius 가 저절로 다시 쓰여요 — 그때 미룬 일을 이어 받아요(더 넉넉히 쓰려면 Helius 플랜을 올리고 설정의 월 크레딧을 바꾸세요)" if cont9 else
              f"{hh9}에 수집이 저절로 다시 시작돼요 — 쉬는 동안 빠진 기록은 그때 이어 받아요(더 자주 받으려면 Helius 플랜을 올리고 설정의 월 크레딧을 바꾸세요)"
              if ours9 else "Helius 플랜·키를 바꾸거나(설정 › 연결 · 키) 그대로 두면 공개 RPC 로 계속 동기화합니다(속도만 느림)"),
-            persist=0, resolve=600, notify=False, remind=False, kind="quota")
+            persist=float(t.get("quota_persist") or 21600), resolve=600, notify=False, remind=False, kind="quota")
         chip("Helius 한도" if quota else None)
         if ssrc.get("head_rpc_on"):
             ou9 = ssrc.get("head_rpc_open_until")
@@ -2472,7 +2551,7 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
                  " · 그동안 헬리우스로 확인해서 헬리우스 하루 몫을 더 써요(옛 기록이 늦어질 수 있음)") if sick9 else
                 f"새 거래 확인 = 공개 노드({host9}) 먼저 · 백업 헬리우스" + (f" · 최근 응답 {round(float(rate9) * 100)}%" if isinstance(rate9, (int, float)) else ""),
                 "저절로 다시 써요(연속 실패 = 1분부터 길게 쉼 · 대조에서 누락이 보이면 6시간) — 오래 이어지면 설정 sol.head_rpc 로 다른 노드를 지정하거나 \"\"(끔)로 헬리우스만 쓰세요",
-                persist=900, resolve=600, notify=False, remind=False, kind="quota")
+                persist=float(t.get("quota_persist") or 21600), resolve=600, notify=False, remind=False, kind="quota")
     kk = obs.get("keys") or {}
     if kk.get("evm") and "tj-evm" in units and "etherscan" in kk:
         have = bool(kk.get("etherscan"))
@@ -2607,6 +2686,25 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
             ("집계 실패: " + str(po["error"])) if (isinstance(po, dict) and po.get("error")) else (" · ".join(parts) if n9 else "모두 처리됨"),
             "시각 없는 건은 수집기가 블록 시각을 구하는 대로 자동으로 다시 보내요 · 목록: python3 tools/replay_poison.py — 원인을 고친 뒤 --apply --all 로 다시 처리",
             persist=0, resolve=600, notify=False, remind=False, kind="ledger")
+    for c9, g9 in sorted((obs.get("nonevm_gaps") or {}).items()):
+        u9, cid9 = "tj-" + c9, "ledger:gap:" + c9
+        n9 = int(g9.get("n") or 0) if isinstance(g9, dict) else None
+        if u9 not in units or (n9 == 0 and cid9 not in open_ids):
+            continue
+        try:
+            import chain_registry as _reg9
+            nm9 = _reg9.display_name(c9)
+        except Exception:
+            nm9 = c9
+        why9 = str(g9.get("why") or "") if isinstance(g9, dict) else ""
+        add(cid9, u9, f"{nm9} 거래 상세 누락 {n9}건" if n9 else f"{nm9} 거래 상세 누락",
+            None if n9 is None else ("warn" if n9 else "ok"),
+            (f"수집 상태 파일(state/cursor_{c9}.json · emitted_{c9}.json)을 읽지 못해 판단 보류 — 직전 판정 유지" if n9 is None else
+             (f"재시도 상한 뒤에도 상세를 못 받은 거래 {n9}건 — 그 지갑 거래 기록 누락 · 기초잔고 대사 보류(숫자 대신 보류)"
+              + (f" · 마지막 사유: {why9}" if why9 else "")) if n9 else "미해소 거래 없음 — 대사 진행"),
+            f"마지막 사유(키·제공자·자릿수 미확인 토큰 등)를 고치면 그 거래가 다시 발견돼 기장될 때 자동으로 풀려요 · 목록: state/cursor_{c9}.json 의 gaps"
+            " — 풀릴 때까지 그 지갑의 창 이전 보유(기초잔고)가 안 잡힐 수 있어요",
+            persist=0, resolve=600, remind=False, kind="ledger")
     tn = obs.get("tunnel")
     tu = ((h.get("tunnel") or {}) if isinstance(h.get("tunnel"), dict) else {}).get("unit")
     if tn is not None and tu and tu in units:
@@ -2641,11 +2739,16 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
         det = " · ".join(f"{EX_NAME.get(r[0], r[0])} {DEBT_SRC_KO.get(r[1], r[1])} {r[2]} " + f"{r[3]:,.6g}".replace("-", "−") + (f"(${r[4]:,.0f})" if r[4] else "")
                          for r in dbt[:6]) + (f" 외 {len(dbt) - 6}건" if len(dbt) > 6 else "")
         lbl = "차입 부채" if any(r[1] == "loan" for r in (dbt or ())) else "마진 부채"
-        add("debt:margin", "tj-exf", (f"{lbl} ${tot:,.0f}" if tot else lbl) if dbt else "마진 부채", "warn" if dbt else "ok",
-            (det + " — 총자산에서 차감 반영") if dbt else "부채 없음",
-            "거래소에서 상환하거나, 의도한 차입이면 그대로 두세요 — 총자산에서 이미 빼고 계산해요(대시보드 '차입 부채' 카드) · 담보는 내 자산으로 계산",
+        unk9 = [r for r in (dbt or ()) if not r[4]]
+        add("debt:margin", "tj-exf", ((f"{lbl} ${tot:,.0f}" if tot else lbl) + (f" · 값 모름 {len(unk9)}건" if unk9 else "")) if dbt else "마진 부채",
+            "warn" if unk9 else "ok",
+            (det + (" — 총자산에서 차감 반영" if not unk9 else " — 시세를 몰라 총자산에서 뺀 금액이 0 일 수 있음: "
+                    + ", ".join(f"{EX_NAME.get(r[0], r[0])} {r[2]}" for r in unk9[:6]))) if dbt else "부채 없음",
+            ("그 코인 시세가 잡히면 저절로 맞춰져요 — 거래소에서 상환하거나, 의도한 차입이면 닫기로 숨길 수 있어요(대시보드 '차입 부채' 카드)" if unk9 else
+             "거래소에서 상환하거나, 의도한 차입이면 그대로 두세요 — 총자산에서 이미 빼고 계산해요(대시보드 '차입 부채' 카드) · 담보는 내 자산으로 계산"),
             persist=0, resolve=600, notify=False, remind=False, kind="debt")
         chip(f"부채 ${tot:,.0f}" if dbt and tot else ("부채" if dbt else None))
+        ackf({f"{r[0]}:{r[1]}:{r[2]}": None for r in unk9})
     ebs = obs.get("exbal")
     if ebs is not None and "tj-exf" in units:
         lim9 = float((t or {}).get("exbal_stale_sec", 7200))
@@ -2680,7 +2783,7 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
                  + (" · 한도(429) 쉼 중" if limited else "") + (f" · 최근 실패: {str(gp.get('err'))[:80]}" if gp.get("err") else ""))
                 if bad else f"대기 새 후보 {int(gp.get('pendingNew') or 0)}건",
                 "pm2 logs tj-web 에서 '고플러스' 실패 사유 확인 — 새 토큰의 스캠 확증 라벨만 늦어짐(격리는 원장 신호로 계속)",
-                persist=0, resolve=600, notify=False, remind=False, kind="goplus")
+                persist=float(t.get("quota_persist") or 21600), resolve=600, notify=False, remind=False, kind="goplus")
         ng = wd.get("neg") if isinstance(wd.get("neg"), dict) else None
         if ng is not None:
             nusd = float(ng.get("usd") or 0)
@@ -2727,6 +2830,7 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
             else "보유 $500 이상 괴리 없음",
             "입출금으로 증명한 거래소 시세가 DEX 와 20% 넘게 다름 — 그 거래소 페어가 다른 코인인지·DEX 풀이 이상한지 확인",
             persist=1800, resolve=600, notify=False, remind=False, kind="price")
+        ackf({f"{x.get('ex')}:{x.get('pair') or x.get('sym')}": x.get("usd") for x in pdv})
         uph = [x for x in (wd.get("unpriced_held") or []) if isinstance(x, dict)
                and max(float(x.get("cost") or 0), float(x.get("ref") or 0)) >= float(t.get("unpriced_warn_usd") or 500)]
         edh = [x for x in (wd.get("ex_dead_held") or []) if isinstance(x, dict)]
@@ -2739,6 +2843,9 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
             "평가 0 으로 총자산에 빠져 있는 보유 — 상장폐지·거래정지·마켓 없음 확인(보유 목록 '시세 없음'), 필요하면 가격을 직접 지정(설정 파일의 가격 지정 항목)"
             " · 대시보드 '시세 없음 N개'는 소액·스캠까지 센 전체이고 여기는 그중 원가·참고가가 큰 실보유만",
             persist=3600, resolve=600, notify=False, remind=False, kind="price")
+        ackf(dict([(str(x.get("ent") or f"sym:{x.get('sym')}|{x.get('where') or ''}"), max(float(x.get("cost") or 0), float(x.get("ref") or 0))) for x in uph]
+                  + [(f"exdead:{str(x.get('ex') or '').lower()}:{x.get('sym')}",
+                      (float(x.get("qty") or 0) * float(x.get("ref") or 0)) if x.get("ref") else None) for x in edh]))
     bd = wd.get("build") if isinstance(wd, dict) and now - float(wd.get("ts") or 0) < 1800 else None
     bpm9 = build_mode_view(wd.get("build_proc") if isinstance(wd, dict) and now - float(wd.get("ts") or 0) < 1800 else None, now)
     if isinstance(bd, dict) and "tj-web" in units and int(bd.get("n") or 0) >= 5:
@@ -2757,7 +2864,7 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
             + build_ex_text(wd.get("build_ex"), now)
             + (f" · {bpm9['chip']}" if bpm9 else ""),
             "보유·기록 규모 증가 또는 원장 잠금(백업·재구축) 확인 — 웹 서버(tj-web) 로그의 '빌드 N초' 줄",
-            persist=900, resolve=600, notify=False, remind=False, kind="web")
+            persist=float(t.get("quota_persist") or 21600), resolve=600, notify=False, remind=False, kind="web")
     if bpm9 and "tj-web" in units:
         add("web:buildmode", "tj-web", bpm9["title"], bpm9["level"], bpm9["detail"],
             "웹 서버(tj-web) 로그의 '빌드 자식 실패' 줄 — 쉼이 끝나면 저절로 별도 프로세스로 돌아감(재시작해도 바로 돌아감)" if bpm9["level"] == "warn" else "",
@@ -2792,7 +2899,9 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
         def _rbw(w):
             miss = ", ".join(f"{x.get('sym')} {x.get('chain')} ${float(x.get('usd') or 0):,.0f}" for x in (w.get("top") or [])[:3])
             return (f"{w.get('label')} 봇 ${float(w.get('bot') or 0):,.0f} · Rabby ${float(w.get('rabby') or 0):,.0f} · 차이 "
-                    f"${float(w.get('rabby') or 0) - float(w.get('bot') or 0):,.0f}" + (f" (빠진 것: {miss})" if miss else ""))
+                    f"${float(w.get('rabby') or 0) - float(w.get('bot') or 0):,.0f}" + (f" (빠진 것: {miss})" if miss else "")
+                    + (f" · 그중 총자산에 안 들어간 몫 ${float(w['rest']):,.0f}" if isinstance(w.get("rest"), (int, float)) and not isinstance(w.get("rest"), bool)
+                       and abs(float(w.get("rabby") or 0) - float(w.get("bot") or 0) - float(w["rest"])) >= 1 else ""))
         long_.sort(key=lambda w: -(float(w.get("rabby") or 0) - float(w.get("bot") or 0)))
         def _bo(w):
             b9, r9 = float(w.get("bot") or 0), float(w.get("rabby") or 0)
@@ -2809,8 +2918,11 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
             "warn" if long_ else "ok",
             " · ".join(x for x in (" · ".join(_rbw(w) for w in long_[:3]), bo_txt) if x) if long_ else
             " · ".join(x for x in ((f"관찰 중 {len(watch)}지갑(하루 지나면 주황)" if watch else ("" if bover else f"{len(rb.get('wallets') or [])}지갑 차이 없음")), bo_txt) if x),
-            "빠진 것은 총자산에 'Rabby 기준'으로 이미 포함 — 봇이 직접 추적하려면 그 체인 지갑 등록·토큰 확인(설정 › Rabby 대조)",
+            "Rabby 에만 있는 항목(프로토콜 예치·봇이 안 보는 체인)은 총자산에 'Rabby 기준'으로 이미 포함 — 여기 남은 차이는 봇이 값을 덜 매긴 추적 토큰"
+            "(시세 없음·가격 이상) 등이라 총자산에 빠져 있을 수 있어요 · 봇이 직접 추적하려면 그 체인 지갑 등록·토큰 확인(설정 › Rabby 대조) · 알고 있으면 닫기",
             persist=0, resolve=3600, notify=False, remind=False, kind="rabby")
+        ackf({str(w.get("addr") or w.get("label") or "").lower(): (float(w["rest"]) if isinstance(w.get("rest"), (int, float)) and not isinstance(w.get("rest"), bool)
+                                                                   else float(w.get("rabby") or 0) - float(w.get("bot") or 0)) for w in long_})
     bk = obs.get("backup")
     if isinstance(bk, dict) and "tj-core" in units:
         ref = float(bk.get("last_ok") or bk.get("created") or 0)
@@ -3113,7 +3225,8 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
                     + (" · 이 체인은 옛 보유 확인 불가: " + ", ".join(no9) if no9 else ""))
             add("balcheck:disc", "tj-web", f"토큰 발견 실패 {fp9}쌍" if fp9 else (f"토큰 판정 대기 {hd9}" if hd9 else "토큰 발견"), lvl9, det9,
                 "발견 실패는 다음 대조(1시간)에 다시 · 한도면 다음 날(UTC) · '옛 보유 확인 불가' 체인은 설정 › 노드 키에 Alchemy·Ankr 무료 키를 넣으면 풀려요",
-                persist=0, notify=False, remind=False, kind="balcheck")
+                persist=float(t.get("disc_persist") or 86400), notify=False, remind=False, kind="balcheck")
+            ackf(ds9.get("ackEnts") if isinstance(ds9.get("ackEnts"), dict) else {})
     cs = obs.get("chainsweep")
     if cs is not None:
         import chainsweep as _cs9
@@ -3129,6 +3242,8 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
             "필요한 체인이면 설정 › 지갑 추가에서 같은 주소에 그 체인을 골라 등록하세요(자동 켜기 chain_sweep.auto_enable 을 켠 설치는 속도 측정 뒤 저절로 켜져요) · "
             "필요 없는 체인·지갑이면 무시 목록(설정 파일 chain_sweep.ignore)에 넣어 경고에서 뺄 수 있어요",
             persist=0, remind=False, kind="chainsweep")
+        ackf({f"{f.get('chain') or f.get('name')}:{(str(f.get('wallet') or '').lower() if str(f.get('wallet') or '').startswith('0x') else f.get('wallet'))}":
+              f.get("usd") for f in fs})
         chip(f"미추적 체인 {len(fs)}건" if fs else "미추적 체인 없음")
         age = eff_age("chainsweep:stale", float(cs.get("checkedAt") or 0) or None)
         if age is not None:
@@ -3291,6 +3406,19 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
     return [c for c in checks if not any(c["id"] == o or c["id"].startswith(o) for o in off)]
 
 
+PERSIST_RAISED = frozenset(("balcheck:disc", "quota:helius", "rpc:sol_head", "goplus:queue", "web:build"))
+
+
+def _ack_rearm(i: dict, c: dict) -> None:
+    if not i.get("announced") or not isinstance(i.get("ack"), dict) or not isinstance(c.get("ack"), dict):
+        return
+    doc9 = ack_doc()
+    if inc_acked(i, doc9) and not inc_acked(dict(i, level=c.get("level"), ack=c["ack"]), doc9):
+        for k9 in ("announced", "queued", "soft_told", "muted", "last_notified", "reminded"):
+            i.pop(k9, None)
+        i["msg_id"] = None
+
+
 def step(st: dict, checks: list, now: float, h: dict) -> list:
     cs = st.setdefault("checks", {})
     inc = st.setdefault("incidents", {})
@@ -3334,8 +3462,13 @@ def step(st: dict, checks: list, now: float, h: dict) -> list:
             i.pop("resolved", None)
             i.pop("resolved_detail", None)
             st["history"] = [x for x in (st.get("history") or []) if not (isinstance(x, dict) and x.get("id") == i.get("id"))]
+            _ack_rearm(i, c)
             i.update(title=c["title"], detail=c["detail"], action=c["action"], level=want or lvl, notify=c["notify"], remind=c["remind"],
                      kind=c.get("kind") or i.get("kind"), flaps=int(i.get("flaps") or 0) + 1)
+            if c.get("ack"):
+                i["ack"] = c["ack"]
+            else:
+                i.pop("ack", None)
             inc[cid] = i
             if want == "crit" and i.get("peak") != "crit":
                 i["peak"] = "crit"
@@ -3345,11 +3478,18 @@ def step(st: dict, checks: list, now: float, h: dict) -> list:
                             "detail": c["detail"], "action": c["action"], "level": want, "peak": want,
                             "opened": now, "since": c.get("since") or r["bad_since"], "notify": c["notify"],
                             "remind": c["remind"], "msg_id": None, "announced": None, "last_notified": None, "kind": c.get("kind")}
-            for k9 in ("keys", "tg_force", "crit_keys", "tg_items", "bal_v"):
+            for k9 in ("keys", "tg_force", "crit_keys", "tg_items", "bal_v", "ack"):
                 if c.get(k9):
                     i[k9] = c[k9]
             events.append(("open", i))
         elif i is not None:
+            if (cid in PERSIST_RAISED and lvl == "warn" and i.get("level") == "warn" and not i.get("announced") and not i.get("queued")
+                    and now - float(i.get("since") or i.get("opened") or now) < float(c.get("persist") or 0)):
+                _bal_dm_forget(st, i)
+                del inc[cid]
+                i.update(resolved=now, resolved_detail="기준 바뀜 — 오래 이어질 때만 주의(지속 요건)", quiet=True)
+                st.setdefault("history", []).append(i)
+                continue
             if c.get("kind") == "balcheck" and lvl in ("ok", "off"):
                 i["notify"] = False
                 for k9 in ("keys", "tg_items"):
@@ -3359,9 +3499,10 @@ def step(st: dict, checks: list, now: float, h: dict) -> list:
                     i.pop(k9, None)
                 i["msg_id"] = None
             if lvl in ("warn", "crit"):
+                _ack_rearm(i, c)
                 i.update(title=c["title"], detail=c["detail"], action=c["action"], level=lvl)
                 i.update(notify=c["notify"], remind=c["remind"], kind=c.get("kind") or i.get("kind"))
-                for k9 in ("keys", "tg_force", "crit_keys", "tg_items", "bal_v"):
+                for k9 in ("keys", "tg_force", "crit_keys", "tg_items", "bal_v", "ack"):
                     if c.get(k9):
                         i[k9] = c[k9]
                     else:
@@ -3399,6 +3540,19 @@ def step(st: dict, checks: list, now: float, h: dict) -> list:
     for cid in [k for k in cs if k not in seen and now - float(cs[k].get("last") or 0) > 86400]:
         del cs[cid]
     return events
+
+
+def ack_doc():
+    try:
+        return health_ack.load()[0]
+    except Exception:
+        return None
+
+
+def inc_acked(i, doc) -> bool:
+    if not isinstance(i, dict) or i.get("level") != "warn" or not isinstance(i.get("ack"), dict) or not i["ack"] or i.get("check") not in health_ack.ACKABLE:
+        return False
+    return health_ack.state(doc, i["check"], "warn", i["ack"]) == "acked"
 
 
 def _min_level(h) -> int:
@@ -3653,9 +3807,19 @@ def _plan_raw(st: dict, events: list, now: float, h: dict, tg_configured: bool):
     inc = st.get("incidents", {})
 
     tg_min = float(h.get("tg_min_age_sec") or 0)
+    ack9 = []
+
+    def acked(i):
+        if not isinstance(i.get("ack"), dict) or not i["ack"]:
+            return False
+        if not ack9:
+            ack9.append(ack_doc())
+        return inc_acked(i, ack9[0])
 
     def eligible(i):
         if tg_min and now - float(i.get("since") or now) < tg_min:
+            return False
+        if acked(i):
             return False
         return i.get("notify", True) and (LEVELS.get(i.get("peak"), 0) >= minl or bool(i.get("tg_force")))
 
@@ -3812,7 +3976,7 @@ def _plan_raw(st: dict, events: list, now: float, h: dict, tg_configured: bool):
         st["digest_date"] = today
         sk9 = _stall_on(now)
         opn = sorted((i for i in inc.values() if not str(i.get("id") or "").startswith(("quota:", "bfstall:", "gaps:"))
-                      and (sk9 or alert_cat(i) != "stall") and alert_cat(i) != "bal"),
+                      and (sk9 or alert_cat(i) != "stall") and alert_cat(i) != "bal" and not acked(i)),
                      key=lambda x: (-LEVELS.get(x["level"], 0), x["opened"]))
         if opn:
             crit = [i for i in opn if i["level"] == "crit"]
@@ -4018,12 +4182,8 @@ def known_note(check, level, detail, opened, now):
     if level != "warn":
         return None
     c, d = str(check or ""), str(detail or "")
-    if c.startswith("debt:"):
-        return "부채 표시 — 총자산에 이미 차감"
     if c.startswith("sync:chain:") and "외부 탐색기 색인" in d and "정체" not in d:
         return "외부 탐색기 색인 진행 중 — 끝나면 자동으로 채움"
-    if c == "price:unpriced" and opened and now - float(opened) >= KNOWN_UNPRICED_AGE:
-        return "시세 없는 보유 — 총자산에 넣지 않음"
     return None
 
 
@@ -4036,6 +4196,8 @@ def _inc_view(i, now, stall_on=True):
     kn = known_note(i.get("check"), i.get("level"), i.get("detail"), i.get("opened") or i.get("since"), now) if not i.get("resolved") else None
     if kn:
         out["known"] = kn
+    if not i.get("resolved") and i.get("level") == "warn" and isinstance(i.get("ack"), dict) and i["ack"] and i.get("check") in health_ack.ACKABLE:
+        out["ackEnts"] = i["ack"]
     return out
 
 
@@ -4108,7 +4270,85 @@ def web_view(now: float = None) -> dict:
                       "action": "pm2 restart tj-alert 후 pm2 logs tj-alert 확인", "level": "crit", "peak": "crit",
                       "since": d.get("updatedAt"), "opened": d.get("updatedAt"), "notified": False,
                       "telegram": False}] + list(d.get("open") or [])
-    return _with_ledger_wait(d, now)
+    return _with_ledger_wait(_ack_overlay(d), now)
+
+
+_ACK_VIEWS = {}
+_ACK_VIEW_LOCK = threading.Lock()
+
+
+def _ack_offer(check: str, ents) -> str:
+    cur = health_ack.norm_ents(ents)
+    with _ACK_VIEW_LOCK:
+        v = _ACK_VIEWS.get(check)
+        if not v or sorted(v["ents"]) != sorted(cur) or not health_ack.covered({"ents": v["ents"]}, "warn", cur):
+            v = {"fp": os.urandom(8).hex(), "ents": cur}
+            _ACK_VIEWS[check] = v
+        else:
+            for k9, a9 in list(v["ents"].items()):
+                if cur.get(k9) is None or (a9 is not None and cur[k9] < a9):
+                    v["ents"][k9] = cur.get(k9)
+        return v["fp"]
+
+
+def _ack_overlay(d: dict) -> dict:
+    try:
+        doc, err = health_ack.load()
+    except Exception as e:
+        doc, err = None, f"닫은 주의 기록을 못 읽어요({type(e).__name__})"
+    d = dict(d)
+    op9 = []
+    for x in d.get("open") or []:
+        if not isinstance(x, dict):
+            op9.append(x)
+            continue
+        ents = x.get("ackEnts")
+        x = {k: v for k, v in x.items() if k != "ackEnts"}
+        if isinstance(ents, dict) and ents and x.get("level") == "warn" and x.get("check") in health_ack.ACKABLE:
+            x["ack"] = {"fp": _ack_offer(x["check"], ents)}
+            st9 = health_ack.state(doc, x["check"], "warn", ents) if doc is not None else None
+            if st9 == "acked":
+                x["acked"] = {"at": ((doc.get("items") or {}).get(x["check"]) or {}).get("at")}
+            elif st9 == "changed":
+                x["ackChanged"] = True
+        op9.append(x)
+    d["open"] = op9
+    d["resolved"] = [{k: v for k, v in x.items() if k != "ackEnts"} if isinstance(x, dict) else x for x in d.get("resolved") or []]
+    ack_ck9 = {x.get("check") for x in op9 if isinstance(x, dict) and x.get("acked")}
+    if ack_ck9 and isinstance(d.get("units"), list):
+        live9 = {x.get("unit") for x in op9 if isinstance(x, dict) and x.get("level") in ("warn", "crit") and not x.get("acked")}
+        us9 = []
+        for u in d["units"]:
+            if isinstance(u, dict):
+                u = dict(u, other=[dict(o, acked=True) if isinstance(o, dict) and o.get("id") in ack_ck9 and o.get("level") == "warn" else o
+                                   for o in (u.get("other") or [])])
+                if u.get("level") == "warn" and u.get("unit") not in live9:
+                    u["level"] = "ok"
+            us9.append(u)
+        d["units"] = us9
+    open_ck9 = {x.get("check") for x in op9 if isinstance(x, dict) and (x.get("acked") or x.get("ackChanged"))}
+    d["acks"] = [dict(e, open=e["check"] in open_ck9) for e in health_ack.entries(doc)] if doc is not None else []
+    if err:
+        d["ackErr"] = err
+    return d
+
+
+def ack_apply(check, fp, now: float = None):
+    now = now or _now()
+    if not isinstance(check, str) or check not in health_ack.ACKABLE or not isinstance(fp, str) or len(fp) != 16:
+        return False, "닫을 수 없는 항목이에요"
+    d = _read(STATUS_PATH, None)
+    it = next((x for x in ((d if isinstance(d, dict) else {}).get("open") or []) if isinstance(x, dict) and x.get("check") == check), None)
+    ents = (it or {}).get("ackEnts")
+    if not isinstance(ents, dict) or not ents or (it or {}).get("level") != "warn":
+        return False, "지금 열린 주의가 아니에요 — 새로고침 뒤 다시"
+    with _ACK_VIEW_LOCK:
+        v9 = _ACK_VIEWS.get(check)
+    if (not v9 or v9["fp"] != fp or sorted(v9["ents"]) != sorted(health_ack.norm_ents(ents))
+            or not health_ack.covered({"ents": v9["ents"]}, "warn", ents)):
+        return False, "그 사이 내용이 바뀌었어요(새 코인·지갑·금액 크게 늚 등) — 새로고침해서 확인한 뒤 다시 닫아 주세요"
+    return health_ack.ack(check, "warn", ents, common.redact_secret_text(str(it.get("title") or ""), generic=False),
+                          common.redact_secret_text(str(it.get("detail") or ""), generic=False), now)
 
 
 def _with_ledger_wait(d: dict, now: float) -> dict:
@@ -4130,8 +4370,10 @@ def _with_ledger_wait(d: dict, now: float) -> dict:
 def compact(view: dict) -> dict:
     op = view.get("open") or []
     out = {"overall": view.get("overall"), "crit": sum(1 for x in op if x.get("level") == "crit"),
-           "warn": sum(1 for x in op if x.get("level") != "crit"), "updatedAt": view.get("updatedAt"),
+           "warn": sum(1 for x in op if x.get("level") != "crit" and not x.get("acked")), "updatedAt": view.get("updatedAt"),
            "stale": bool(view.get("stale"))}
+    if any(x.get("acked") for x in op):
+        out["acked"] = sum(1 for x in op if x.get("acked"))
     if view.get("ledgerWait"):
         out["ledger"] = view["ledgerWait"]
     if view.get("monitorOff"):
@@ -4290,6 +4532,7 @@ class Monitor:
                 "extrb": _read(os.path.join(common.STATE_DIR, "ext_rebuild_status.json"), None),
                 "decis": _read(os.path.join(common.STATE_DIR, "asset_decimals_issues.json"), None),
                 "poison": collect_poison(),
+                "nonevm_gaps": collect_nonevm_gaps(cfg),
                 "pnlgate": _read(os.path.join(common.STATE_DIR, "rebuild_pnl_gate.json"), None),
                 "liqw": _read(os.path.join(common.STATE_DIR, "liq_watch.json"), None),
                 "hb": read_heartbeats(cfg),
@@ -4298,7 +4541,7 @@ class Monitor:
                 "backup": _read(os.path.join(common.STATE_DIR, "backups", "backup_status.json"), None),
                 "offsite": _offsite_obs(cfg, st, now),
                 "rss": rss_track(st, pm2, now, float((h.get("t") or {}).get("rss_win") or 1800)),
-                "balcheck": collect_balcheck(),
+                "balcheck": collect_balcheck(cfg),
                 "chainsweep": collect_chainsweep(),
                 "inbox": pr["inbox"]() if "inbox" in pr else collect_inbox(st, now),
                 "disk": pr["disk"]() if "disk" in pr else collect_disk(),

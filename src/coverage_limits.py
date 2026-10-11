@@ -526,6 +526,11 @@ def build(base=None, exl_path=None, speed_path=None, now=None, conn=None):
             r["count"] = n_open
         reasons.append(r)
     active_chains = sorted(ch for ch in wallets if ch in CHAIN_TRACKS)
+    try:
+        import chain_registry
+        active_chains = sorted(set(active_chains) | set(chain_registry.configured_chains(cfg)))
+    except Exception:
+        pass
     return {"schema": SCHEMA_VERSION, "generated_at": now, "generator": "src/coverage_limits.py",
             "api_limits": api_limits_table(base, set(exf) | ({"upbit"} if upo else set()), active_chains,
                                            {str(w.get("dex")) for w in (cfg.get("perp_wallets") or []) if isinstance(w, dict)}),

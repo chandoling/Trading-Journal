@@ -37,5 +37,9 @@ const apps = [
   direct('tj-alert', 'alert_bot.py'),
 ];
 if (process.env.TJ_ENABLE_REVIEW === '1') apps.push(direct('tj-review', 'review_daily.py'));
+const fs = require('fs');
+for (const [unit, file] of [['tron', 'tron_watch.py'], ['sui', 'sui_watch.py'], ['ton', 'ton_watch.py'], ['btc', 'btc_watch.py']]) {
+  if (fs.existsSync(path.join(ROOT, 'src', file))) apps.push(runner(unit));
+}
 
 module.exports = { apps };

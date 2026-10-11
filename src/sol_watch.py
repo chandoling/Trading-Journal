@@ -2074,6 +2074,44 @@ class SolWatcher:
                 (self.rpc.fill_scope() if callable(getattr(self.rpc, "fill_scope", None)) else contextlib.nullcontext()):
             self._extend_addrs(pend, target)
 
+    _PROG_UNFIN = ("_sigbf:", "_fb_wait:", "_fbw:", "_hl:", "_sigx:")
+
+    def prune_progress(self) -> int:
+        known, unfin = set(self.owners), set()
+        for k in list(self.cursor):
+            if not isinstance(k, str) or not k:
+                continue
+            if not k.startswith("_"):
+                known.add(k)
+                continue
+            p9, sep, a9 = k.partition(":")
+            if sep and a9:
+                known.add(a9)
+                if p9 + ":" in self._PROG_UNFIN:
+                    unfin.add(a9)
+        settled = {a for a in known if a in self.cursor and a not in unfin}
+
+        def pred(key, it):
+            if not isinstance(it, dict):
+                return False
+            if it.get("phase") in ("done", "live"):
+                return True
+            parts = str(key).split(":")
+            if len(parts) < 2 or parts[0] != "sol" or not parts[1]:
+                return False
+            m = [a for a in known if a.startswith(parts[1])]
+            if not m:
+                return True
+            return len(parts) == 2 and all(a in settled for a in m)
+        try:
+            n = self.progress.prune(pred)
+        except Exception as e:
+            log.warning("지난 진행 표식 정리 건너뜀: %s", type(e).__name__)
+            return 0
+        if n:
+            log.info("지난 진행 표식 %d개 정리(끝났거나 첫 동기화를 마친 주소 · 표시 전용)", n)
+        return n
+
     def _first_synced(self, a: str) -> bool:
         return a in self.cursor or ("_cov_ts:" + a) in self.cursor
 
@@ -2158,6 +2196,8 @@ class SolWatcher:
                     os.remove(self._spool_path(a, "x"))
                 except OSError:
                     pass
+                if not isinstance(self.cursor.get("_sigbf:" + a), dict) and (self.progress.items.get(f"sol:{a[:8]}") or {}).get("phase") == "sigs":
+                    self.progress.drop(f"sol:{a[:8]}")
                 self.progress.finish(f"sol:{a[:8]}:extend", note=f"{len(todo)}건")
             common.atomic_write_json(self.cursor_path, self.cursor)
 
@@ -2495,6 +2535,7 @@ def main():
     poll = int(cfg.get("sol", {}).get("poll_sec", 60))
     writer = SegmentWriter(os.path.join(common.INBOX_DIR, "sol"))
     w = SolWatcher(cfg, wallets, writer)
+    w.prune_progress()
     log.info("가동: %d지갑, %d초 주기", len(wallets), poll)
     while True:
         t0 = time.time()

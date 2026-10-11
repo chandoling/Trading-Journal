@@ -19,9 +19,24 @@ import db as dbm
 import ledger_backup as lb
 
 STREAMS = ("evm", "sol", "bsc", "ex")
+try:
+    import chain_registry as reg
+except Exception:
+    reg = None
+
+
+def streams_for(sd: str = None, offsets: dict = None) -> tuple:
+    if reg is None:
+        return STREAMS
+    sd = sd or common.STATE_DIR
+    extra = set(reg.present_streams(os.path.join(sd, "inbox"), sd)) | {c for c in (offsets or {}) if c in reg.SPECS}
+    return STREAMS + tuple(c for c in reg.CHAINS if c in extra)
+
+
 MARGIN_H = 12
 PRE_RESTORE_KEEP = 2
-UNIT_SCRIPTS = ("core.py", "unit_runner.py", "evm_watch.py", "sol_watch.py", "bsc_watch.py", "upbit_link.py", "ex_foreign.py", "web.py")
+UNIT_SCRIPTS = ("core.py", "unit_runner.py", "evm_watch.py", "sol_watch.py", "bsc_watch.py", "upbit_link.py", "ex_foreign.py", "web.py") \
+    + tuple(reg.SPECS[c].module + ".py" for c in (reg.CHAINS if reg else ()))
 STOP_HINT = "pm2 stop tj-core tj-evm tj-sol tj-bsc tj-ex tj-exf tj-web"
 START_HINT = "pm2 start tj-core  →  (몇 분 뒤) pm2 start tj-evm tj-sol tj-bsc tj-ex tj-exf tj-web"
 BSC_BLOCK_S = 0.45
@@ -152,7 +167,7 @@ def check(path: str, full: bool = False) -> dict:
 def coverage(offsets: dict, inbox_dir: str = None) -> dict:
     ib = inbox_dir or common.INBOX_DIR
     out = {}
-    for s in STREAMS:
+    for s in streams_for(os.path.dirname(ib) if inbox_dir else None, offsets):
         seg, off = offsets.get(s, (1, 0))
         segs = lb.inbox_segments(ib, s)
         try:
@@ -510,10 +525,12 @@ def plan_bsc(sd: str, B: dict, cut: int, now: int, notes: list) -> dict:
             files["emitted_bsc.json"] = keep
             notes.append(f"emitted_bsc.json: {len(em)} → {len(keep)}")
     cur = _read_json(os.path.join(sd, "cursor_bsc.json"), None)
+    rb = None
     if isinstance(cur, dict):
         new = json.loads(json.dumps(cur))
         fb = new.get("from_block")
         if isinstance(fb, int):
+            rb = fb
             back = int((max(0, now - cut)) / BSC_BLOCK_S)
             b = fb - back
             if B["bsc_max"] is not None:
@@ -521,7 +538,7 @@ def plan_bsc(sd: str, B: dict, cut: int, now: int, notes: list) -> dict:
             cov = new.get("_cov")
             b = max(b, cov) if isinstance(cov, int) else b
             if b < fb:
-                new["from_block"] = max(0, b)
+                new["from_block"] = rb = max(0, b)
                 notes.append(f"cursor_bsc.json: from_block {fb} → {new['from_block']}")
         for k9 in ("_scan", "_synced_at", "_live", "_lscan"):
             new.pop(k9, None)
@@ -548,7 +565,72 @@ def plan_bsc(sd: str, B: dict, cut: int, now: int, notes: list) -> dict:
         if new != xst:
             files["bsc_xin.json"] = new
             notes.append("bsc_xin.json: 백업에 없는 회수 기록 지움(다시 회수)")
+    if rb is None and B["bsc_max"] is not None:
+        rb = B["bsc_max"] - int(MARGIN_H * 3600 / BSC_BLOCK_S)
+    bal = _plan_bsc_balw(sd, L, rb, now, notes)
+    if bal is not None:
+        files["bsc_balw.json"] = bal
     return files
+
+
+def _plan_bsc_balw(sd: str, L: set, rb, now: int, notes: list):
+    st = _read_json(os.path.join(sd, "bsc_balw.json"), None)
+    if not isinstance(st, dict) or not isinstance(st.get("w"), dict):
+        return None
+    new = json.loads(json.dumps(st))
+    ends, nj, nu = {}, 0, 0
+    for w, ws in new["w"].items():
+        if not isinstance(ws, dict):
+            continue
+        try:
+            cp = ws.get("cp")
+            z, bz, nz = int(cp[0]), int(cp[1]), int(cp[2])
+        except (TypeError, ValueError, IndexError):
+            continue
+        starts = [int(rb)] if isinstance(rb, int) else []
+        jobs = [j for j in ws.get("jobs") or [] if isinstance(j, dict)]
+        uxs = [u for u in ws.get("ux") or [] if isinstance(u, dict)]
+        old = ws.get("rs") if isinstance(ws.get("rs"), dict) else {}
+        for x in jobs + uxs + [old]:
+            try:
+                starts.append(int(x["a"]))
+            except (KeyError, TypeError, ValueError):
+                pass
+        if not starts or min(starts) >= z:
+            continue
+        a = max(1, min(starts))
+        ws["rs"] = {"a": a, "z": z, "bz": str(bz), "nz": nz, "t0": int(now)}
+        nj += len(jobs)
+        nu += len(uxs)
+        ws.pop("jobs", None)
+        ws.pop("ux", None)
+        ws.pop("rs_ns", None)
+        ends[w] = z
+    d = new.get("d") if isinstance(new.get("d"), dict) else {}
+    for w, idx in list(d.items()):
+        if not isinstance(idx, dict):
+            continue
+        keep = {}
+        for h, v in idx.items():
+            try:
+                b9 = int(v[0])
+            except (TypeError, ValueError, IndexError):
+                continue
+            if str(h).lower() in L and (w not in ends or b9 > ends[w]):
+                keep[h] = v
+        d[w] = keep
+    if isinstance(new.get("rqp"), list):
+        new["rqp"] = [e for e in new["rqp"] if not (isinstance(e, dict) and isinstance(e.get("it"), dict) and e["it"].get("wallet") in ends)]
+        if not new["rqp"]:
+            new.pop("rqp")
+    if new == st:
+        return None
+    if ends:
+        notes.append(f"bsc_balw.json: 잔고 감시 다시 점검 {len(ends)}개 지갑(블록 {min(new['w'][w]['rs']['a'] for w in ends)}~ · 옛 차선이 끝난 뒤 복원 원장 기준"
+                     f"{f' · 남은 작업 {nj}·미해결 구간 {nu} 합침' if nj or nu else ''}) — 로그 없는 BNB 수신 다시 찾기")
+    else:
+        notes.append("bsc_balw.json: 잔고 감시 색인 = 백업에 있는 거래만")
+    return new
 
 
 def _rewind_seen_wd(st: dict, bex: dict) -> int:
@@ -679,7 +761,7 @@ def plan(backup: str, streams=None, margin_h: float = MARGIN_H, now: int = None,
     T = info["T"]
     cut = int(T - margin_h * 3600)
     cov = coverage(info["offsets"], os.path.join(sd, "inbox"))
-    rewind = [s for s in STREAMS if (streams is None and cov[s]["state"] == "gap") or (streams is not None and s in streams)]
+    rewind = [s for s in cov if (streams is None and cov[s]["state"] == "gap") or (streams is not None and s in streams)]
     notes, files = [], {}
     if rewind:
         B = _backup_sets(backup, cut)
@@ -690,11 +772,23 @@ def plan(backup: str, streams=None, margin_h: float = MARGIN_H, now: int = None,
             files.update(plan_sol(sd, B, cfg, cut, notes))
         if "bsc" in rewind:
             files.update(plan_bsc(sd, B, cut, now, notes))
+        for c9 in [x for x in rewind if reg is not None and x in reg.SPECS]:
+            files.update(plan_chain(sd, c9, notes))
         if "ex" in rewind:
             files.update(plan_ex(sd, B, cut, notes))
             notes.append("업비트 입출금: tj-ex 를 다시 시작하면 창 전체를 다시 보냄(파일 커서 없음)")
     return {"backup": backup, "T": T, "cut": cut, "margin_h": margin_h, "info": info, "coverage": cov, "rewind": rewind,
             "files": files, "notes": notes, "decisions_after": decisions_after(T)}
+
+
+def plan_chain(sd: str, chain: str, notes: list) -> dict:
+    sp = reg.spec(chain)
+    out = {}
+    for n in (sp.cursor_file, sp.emitted_file):
+        if os.path.exists(os.path.join(sd, n)):
+            out[n] = None
+    notes.append(f"{sp.name}: 수집 커서·방출 기록 치움 → 창 처음부터 다시 받음(원장은 같은 거래를 한 번만 기장)")
+    return out
 
 
 def decisions_after(T: int, live: str = None):
@@ -987,7 +1081,8 @@ def files_apply(fp: dict, proc_check: bool = True, state_dir: str = None, log=pr
 
 
 COLLECTOR_UNITS = ("evm_watch.py", "sol_watch.py", "bsc_watch.py", "upbit_link.py", "ex_foreign.py",
-                   "unit_runner.py evm", "unit_runner.py sol", "unit_runner.py bsc")
+                   "unit_runner.py evm", "unit_runner.py sol", "unit_runner.py bsc") \
+    + tuple(x for c in (reg.CHAINS if reg else ()) for x in (reg.SPECS[c].module + ".py", "unit_runner.py " + c))
 COLLECT_STOP_HINT = "pm2 stop tj-evm tj-sol tj-bsc tj-ex tj-exf"
 
 
@@ -1008,6 +1103,7 @@ def new_ledger(apply_: bool, fresh_collect: bool = False, state_dir: str = None,
     moved = []
     if fresh_collect:
         pats = (r"^cursor_(evm|rpc)_[\w.-]+\.json$", r"^emitted_(evm|rpc)_[\w.-]+\.json$", r"^cursor_(sol|bsc)\.json$", r"^emitted_(sol|bsc)\.json$",
+                r"^(cursor|emitted)_(tron|sui|ton|btc)\.json$",
                 r"^(upbit_orders_state|exf_state|bsc_nonce|bsc_xin|backfill_done)(\.json)?$")
         moved = [n for n in sorted(os.listdir(sd)) if any(re.match(x, n) for x in pats)]
         log("수집 기록 옆으로(처음부터 다시 받음): " + (", ".join(moved) if moved else "없음"))
@@ -1134,8 +1230,9 @@ def main(argv=None) -> int:
         bk = resolve(a.backup)
         if os.path.realpath(bk) == os.path.realpath(common.DB_PATH):
             raise SystemExit("지금 원장 자체는 백업이 아니에요")
-        streams = None if a.rewind == "auto" else (list(STREAMS) if a.rewind == "all" else
-                                                   [] if a.rewind == "none" else [s for s in a.rewind.split(",") if s in STREAMS])
+        st9 = streams_for()
+        streams = None if a.rewind == "auto" else (list(st9) if a.rewind == "all" else
+                                                   [] if a.rewind == "none" else [s for s in a.rewind.split(",") if s in st9])
         if a.apply and not a.no_proc_check:
             run = running_units()
             if run:

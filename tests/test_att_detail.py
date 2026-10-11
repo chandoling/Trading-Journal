@@ -171,7 +171,8 @@ fl9 = dTA.get("fl") or []
 chk(len(fl9) == 1 and "TKN" in fl9[0][0] and abs(fl9[0][1] + 1200) < 0.5 and fl9[0][0] in [t[0] for t in rTA.get("flowTop") or []],
     "발견 날 입출금 = TKN 600 보냄 −$1,200 한 건(설명 = 그날 flowTop 과 같은 말)", (fl9, rTA.get("flowTop")))
 mkA = dTA.get("mk") or []
-chk(mkA and mkA[0][0] == "TKN" and abs(mkA[0][1] - 1000) < 0.5 and len(mkA[0]) == 6 and abs(mkA[0][3] - 1000) < 1e-6 and (mkA[0][4], mkA[0][5]) == (1.0 + 0.01 * (int(datetime.fromtimestamp(TA - DAY, KST).strftime("%d")) % 4), 2.0),
+pA0 = 1.0 + 0.01 * (int(datetime.fromtimestamp(TA - DAY, KST).strftime("%d")) % 4)
+chk(mkA and mkA[0][0] == "TKN" and abs(mkA[0][1] - 1000 * (2.0 - pA0)) < 0.5 and len(mkA[0]) == 6 and abs(mkA[0][3] - 1000) < 1e-6 and (mkA[0][4], mkA[0][5]) == (pA0, 2.0),
     "발견 날 시세 = TKN 1,000개 × ($1 → $2) = +$1,000(수량·전일가·그날가)", mkA)
 att0 = {r.get("date"): json.dumps(r.get("att"), sort_keys=True) for r in ser if r.get("att")}
 BB0 = BB

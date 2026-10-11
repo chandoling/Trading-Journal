@@ -86,6 +86,12 @@ def _xin_not_found(err) -> bool:
     return bool(_XIN_NF.match(str(err)))
 
 
+def _ord_li(leg: dict, lg: dict) -> None:
+    li9 = bf_engine.ord_index(lg.get("logIndex"))
+    if li9 is not None:
+        leg["log_index"] = li9
+
+
 def _touches(snap: dict, w: str) -> bool:
     tx = snap.get("tx") or {}
     if w in (str(tx.get("from") or "").lower(), str(tx.get("to") or "").lower()):
@@ -279,6 +285,14 @@ class _NView:
             self.ws["top_at"] = int(self.top_at)
 
 
+def _bsc_via() -> str:
+    try:
+        import nodesel
+        return nodesel.via("bsc")
+    except Exception:
+        return ""
+
+
 def _pad_topic(addr: str) -> str:
     return "0x" + addr.lower().replace("0x", "").rjust(64, "0")
 
@@ -384,6 +398,11 @@ class BscWatcher:
         self.arch_rpc = Rpc(list(self._arch_urls)) if self._arch_urls else None
         pub9 = [u for u in bc["detail_rpcs"] if u not in self._arch_urls]
         self.nonce_pub_rpc = Rpc(pub9) if pub9 else None
+        try:
+            import nodesel
+            nodesel.register("bsc", self.logs_rpc.urls, self.rpc.urls, self._arch_urls)
+        except Exception:
+            pass
         self.logs_sleep = float(bc.get("logs_sleep_sec", 1.2))
         self.span = int(bc.get("getlogs_span", 5000))
         self.logs_fb = {str(u): int(c) for u, c in (bc.get("logs_rpcs_fallback") or {}).items() if int(c) > 0}
@@ -643,6 +662,7 @@ class BscWatcher:
             sym, dec = self.token_info(wr)
             legs.append({"from": fr, "to": to, "token": {"address": wr, "symbol": sym, "decimals": dec, "type": "ERC-20"},
                          "total": {"value": str(v)}})
+            _ord_li(legs[-1], lg)
         return legs, ints
 
     SELL_WD_RECENT = 100
@@ -812,21 +832,26 @@ class BscWatcher:
                 "token": {"address": ca, "symbol": sym, "decimals": dec, "type": "ERC-20"},
                 "total": {"value": str(val)},
             })
+            _ord_li(tts[-1], lg)
         wl9, wi9 = self._wrap_moves(rc, tts) if status == "0x1" else ([], [])
         tts.extend(wl9)
         if status == "0x1":
             wi9 = wi9 + self._sell_unwrap(tx, rc, tts, wi9)
+        stx = {
+            "hash": tx["hash"], "from": tx.get("from"), "to": tx.get("to"),
+            "value": str(int(tx.get("value") or "0x0", 16)),
+            "fee": {"value": str(gas_used * gas_px)},
+            "status": "ok" if status == "0x1" else "error",
+            "raw_input": tx.get("input") or "0x",
+            "timestamp": ts,
+            "block_number": int(tx["blockNumber"], 16),
+            "block_hash": tx.get("blockHash"),
+        }
+        pos9 = bf_engine.tx_position(tx, rc)
+        if pos9 is not None:
+            stx["position"] = pos9
         return {
-            "tx": {
-                "hash": tx["hash"], "from": tx.get("from"), "to": tx.get("to"),
-                "value": str(int(tx.get("value") or "0x0", 16)),
-                "fee": {"value": str(gas_used * gas_px)},
-                "status": "ok" if status == "0x1" else "error",
-                "raw_input": tx.get("input") or "0x",
-                "timestamp": ts,
-                "block_number": int(tx["blockNumber"], 16),
-                "block_hash": tx.get("blockHash"),
-            },
+            "tx": stx,
             "token_transfers": tts,
             "internal": wi9,
         }
@@ -910,7 +935,7 @@ class BscWatcher:
         span = max(1, ext["to"] - ext["tblk"])
         self.progress.update("bsc:extend", phase="extend", unit="blocks", done=ext["done_to"] - ext["tblk"], total=span,
                              pending_detail=len(ext["found"]), target=time.strftime("%Y-%m-%d", time.gmtime(target)),
-                             range=[ext["tblk"], ext["to"]], note=(self.last_scan_metrics or {}).get("stop"))
+                             range=[ext["tblk"], ext["to"]], note=(self.last_scan_metrics or {}).get("stop"), via=_bsc_via())
         if ext["done_to"] >= ext["to"] and not ext["found"]:
             self.cursor["_cov"] = ext["tblk"]
             self.cursor.pop("_ext", None)
@@ -1039,7 +1064,7 @@ class BscWatcher:
         span = max(1, job["to"] - job["lo"] + 1)
         self.progress.update(self.NEWW_KEY, phase="extend", unit="blocks", done=job["done_to"] - job["lo"] + 1,
                              total=span, pending_detail=len(job["found"]), range=[job["lo"], job["to"]],
-                             note=f"새 지갑 {len(job['wallets'])}개")
+                             note=f"새 지갑 {len(job['wallets'])}개", via=_bsc_via())
         if job["done_to"] >= job["to"] and not job["found"]:
             self.cursor["_wallets"] = sorted((set(known) | set(job["wallets"])) & cur)
             self.cursor.pop("_neww", None)
@@ -1920,6 +1945,9 @@ class BscWatcher:
             c.append(cp[0])
         c += [j["a"] for j in ws.get("jobs") or [] if isinstance(j, dict) and isinstance(j.get("a"), int)]
         c += [u["a"] for u in ws.get("ux") or [] if isinstance(u, dict) and isinstance(u.get("a"), int)]
+        rs = ws.get("rs")
+        if isinstance(rs, dict) and isinstance(rs.get("a"), int):
+            c.append(rs["a"])
         return min(c) if c else None
 
     def _balw_put(self, st: dict, w: str, h: str, b: int, snap: dict) -> bool:
@@ -2418,7 +2446,7 @@ class BscWatcher:
 
     @staticmethod
     def _balw_hist_busy(ws: dict) -> bool:
-        return any(isinstance(j, dict) and j.get("k") == "hist" for j in ws.get("jobs") or [])
+        return any(isinstance(j, dict) and j.get("k") == "hist" for j in ws.get("jobs") or []) or isinstance(ws.get("rs"), dict)
 
     @staticmethod
     def _balw_hist_end(ws: dict):
@@ -2682,7 +2710,7 @@ class BscWatcher:
             if not (isinstance(cp, list) and len(cp) == 3):
                 ws.pop("rx", None)
                 continue
-            if ws.get("jobs") or ws.get("ux"):
+            if ws.get("jobs") or ws.get("ux") or isinstance(ws.get("rs"), dict):
                 continue
             z, bz = int(cp[0]), int(cp[1])
             age = max(0.0, float(ws.get("cp_at") or now) - float(ws["rx"]))
@@ -2714,6 +2742,47 @@ class BscWatcher:
                 log.info("BSC 잔고 감시 %s: 지난 공백 다시 점검 — 블록 %d~%d 설명 안 되는 BNB 증가 %d wei — 이분 탐색", w[:10], a, z, r)
             else:
                 log.info("BSC 잔고 감시 %s: 지난 공백 다시 점검 — 블록 %d~%d 원장으로 다 설명됨", w[:10], a, z)
+
+    def _balw_rs(self, st: dict, eoas: list, cnt: dict):
+        if isinstance(self.cursor.get("_live"), dict):
+            return
+        now = _now()
+        for w in eoas:
+            ws = st["w"].get(w)
+            rs = ws.get("rs") if isinstance(ws, dict) else None
+            if not isinstance(rs, dict):
+                continue
+            try:
+                a, z, bz, nz = int(rs["a"]), int(rs["z"]), int(rs["bz"]), int(rs["nz"])
+            except (KeyError, TypeError, ValueError):
+                log.warning("BSC 잔고 감시 %s: 원장 복구 다시 점검 항목 손상 — 버림: %s", w[:10], str(rs)[:120])
+                ws.pop("rs", None)
+                continue
+            if a >= z:
+                ws.pop("rs", None)
+                continue
+            try:
+                ba = int(self._balw_call(cnt, "eth_getBalance", [w, hex(a)]), 16)
+                na = int(self._balw_call(cnt, "eth_getTransactionCount", [w, hex(a)]), 16)
+            except _BalwNoArch as e:
+                if isinstance(e, _BalwNoState):
+                    ws["rs_ns"] = int(ws.get("rs_ns") or 0) + 1
+                    if ws["rs_ns"] < BALW_NOSTATE_N:
+                        continue
+                ts9 = self.block_ts.get(hex(z))
+                if ts9 is None:
+                    self._balw_charge(cnt, 1)
+                    ts9 = self._block_time(hex(z))
+                why = f"원장 복구 다시 점검(블록 {a}~{z}) · 아카이브 없음"
+                log.warning("BSC 잔고 감시 %s: %s — %s", w[:10], why, str(e)[:80])
+                self._balw_disc_req(st, w, z, bz, ts9, 1, why, old=True)
+                ws.pop("rs", None)
+                ws.pop("rs_ns", None)
+                continue
+            ws.pop("rs_ns", None)
+            ws.setdefault("ux", []).insert(0, {"a": a, "ba": str(ba), "na": na, "z": z, "bz": str(bz), "nz": nz, "t0": int(now), "why": "원장 복구"})
+            ws.pop("rs", None)
+            log.info("BSC 잔고 감시 %s: 원장 복구 다시 점검 — 블록 %d~%d 미해결 구간(복원 원장 + 다시 받은 거래로 설명)", w[:10], a, z)
 
     @staticmethod
     def _balw_old(job) -> bool:
@@ -2862,6 +2931,8 @@ class BscWatcher:
                 cp = ws.get("cp")
                 ok_cp = isinstance(cp, list) and len(cp) == 3 and all(isinstance(x, (int, str)) for x in cp)
                 if not ok_cp or int(cp[0]) > S:
+                    if ok_cp and isinstance(ws.get("rs"), dict):
+                        continue
                     ws["cp"], ws["cp_at"] = [int(S), str(bal), int(non)], int(now)
                     ws.pop("gap", None)
                     continue
@@ -2891,7 +2962,7 @@ class BscWatcher:
             hc9 = [] if resting else self._balw_hist_cands(st, eoas, now)
             if not resting:
                 back9 = bool(hc9) or os.path.exists(os.path.join(common.STATE_DIR, BALW_RX_NAME)) or any(
-                    (st["w"].get(w9) or {}).get("ux") or (st["w"].get(w9) or {}).get("rx")
+                    (st["w"].get(w9) or {}).get("ux") or (st["w"].get(w9) or {}).get("rx") or (st["w"].get(w9) or {}).get("rs")
                     or any(self._balw_back(j9) for j9 in (st["w"].get(w9) or {}).get("jobs") or []) for w9 in eoas)
                 if back9:
                     cnt["cap"] = BALW_CALL_CAP - BALW_BACK_MIN
@@ -2911,7 +2982,8 @@ class BscWatcher:
             self._balw_ux_step(st, eoas, cnt, now, nst)
             if resting:
                 raise _BalwStop("아카이브 쉬는 중 — 공개 잔고 확인·창 평가만")
-            for st9 in (lambda: self._balw_rx(st, eoas, cnt, limit=1),
+            for st9 in (lambda: self._balw_rs(st, eoas, cnt),
+                        lambda: self._balw_rx(st, eoas, cnt, limit=1),
                         lambda: self._balw_hist(st, eoas, cnt, hc9),
                         lambda: self._balw_jobs(st, eoas, cnt, head, now, back=True),
                         lambda: self._balw_rx(st, eoas, cnt)):
@@ -2955,7 +3027,8 @@ class BscWatcher:
         hw9 = [int(now) - int(v9["hist_wait"]) for v9 in st["w"].values() if isinstance(v9, dict) and isinstance(v9.get("hist_wait"), int)]
         self._balw_facts = {"wallets": len(eoas), "jobs": jobs_left, "calls": cnt["n"], "emit": cnt["emit"],
                             "noarch": getattr(self, "arch_rpc", None) is None, "at": int(now), "ux": ux_left,
-                            "hist_wait": len(hw9), "hist_wait_s": max(hw9) if hw9 else 0}
+                            "hist_wait": len(hw9), "hist_wait_s": max(hw9) if hw9 else 0,
+                            "rs": sum(1 for v9 in st["w"].values() if isinstance(v9, dict) and isinstance(v9.get("rs"), dict))}
         st["last"] = self._balw_facts
         self._balw_save()
         if cnt.get("rx_take"):

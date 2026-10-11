@@ -52,6 +52,7 @@ eco = os.path.join(T.ROOT, "public", "ecosystem.config.js")
 eco = eco if os.path.isfile(eco) else os.path.join(T.ROOT, "ecosystem.config.js")
 direct = re.findall(r"direct\('[^']+',\s*'([a-z_]+\.py)'\)", open(eco, encoding="utf-8").read()) if os.path.isfile(eco) else []
 children = ["core.py", "evm_watch.py", "sol_watch.py", "bsc_watch.py", "web.py"]
+children += [f for f in ("tron_watch.py", "sui_watch.py", "ton_watch.py", "btc_watch.py") if os.path.isfile(os.path.join(T.SRC, f))]
 miss = []
 for fn in sorted(set(direct) | set(children)):
     src = open(os.path.join(T.SRC, fn), encoding="utf-8").read()

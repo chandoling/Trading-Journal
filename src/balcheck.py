@@ -586,7 +586,8 @@ def run_once(cfg: dict, conn, live_px: dict, skip_gids: set, prev: dict) -> dict
             if disc_n >= int(st.get("disc_refresh_max") or 0) or time.time() - t9 > float(st.get("disc_refresh_sec") or 0):
                 break
             try:
-                r9 = _td.discover(ch, w, cfg=cfg9, sources=dplan.get(ch), deadline=t9 + float(st.get("disc_refresh_sec") or 0),
+                r9 = _td.discover(ch, w, cfg=cfg9, sources=_td.run_sources(dplan.get(ch), why9),
+                                  deadline=t9 + float(st.get("disc_refresh_sec") or 0),
                                   burst=(why9 == "first"))
                 _td.save_result(ch, w, r9, sig9, why9)
                 disc_n += 1

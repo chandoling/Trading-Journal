@@ -14,6 +14,7 @@ import sqlite3
 import time
 import common
 import core
+import db as dbm
 import ledger_backup as LB
 
 assert _x.TMP in common.STATE_DIR
@@ -76,6 +77,23 @@ def big(path, size):
         f.truncate(size)
 
 
+def unside(path):
+    for sfx in ("-wal", "-shm"):
+        try:
+            os.remove(path + sfx)
+        except FileNotFoundError:
+            pass
+
+
+def real_big(path, size):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    cx = dbm.open_db(path)
+    cx.execute("PRAGMA journal_mode=DELETE").fetchone()
+    cx.close()
+    unside(path)
+    os.truncate(path, size)
+
+
 def clear():
     DISK["cap"] = None
     DISK["home_free"] = None
@@ -105,12 +123,15 @@ NEWTS = time.strftime("%Y%m%d_%H%M%S", time.localtime(time.time() - 120))
 
 def setup(failed=True, leftovers=False):
     clear()
-    for p in PRE:
+    for p in PRE[:2]:
         big(p, 512 * MB)
         big(p + "-wal", 4 * MB)
+    real_big(PRE[2], 512 * MB)
+    open(PRE[2] + "-wal", "w").close()
     big(PRE[0] + "-shm", 32 * 1024)
-    for p in DAY:
+    for p in DAY[:2]:
         big(p, 512 * MB)
+    real_big(DAY[2], 512 * MB)
     open(os.path.join(S, "backups", "prefs_20261003.json"), "w").write("{}")
     if failed:
         big(os.path.join(F_OLD, "config.json.after"), 300 * MB)
@@ -263,11 +284,12 @@ check("[R] 자동 정리로 충분해지면 재시도(옛 보존본 정리됨)",
 c._ext_rebuild = real_rebuild
 
 def mkdb(path, tag):
-    cx = sqlite3.connect(path)
-    cx.execute("CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT)")
+    cx = dbm.open_db(path)
     cx.execute("INSERT INTO meta VALUES ('tag', ?)", (tag,))
     cx.commit()
+    cx.execute("PRAGMA journal_mode=DELETE").fetchone()
     cx.close()
+    unside(path)
 
 
 def tag(path):

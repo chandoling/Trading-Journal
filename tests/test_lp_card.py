@@ -9,12 +9,12 @@ import re
 import shutil
 import subprocess
 
-JS = r'''// 대시보드 LP 카드 + 레버리지 · 대출 2줄 — 실제 app.js 블록(normLP · uiMore·uiPaged(uipage1011 쪽 넘김) · LP · 레버리지)을 가짜 의존성으로 돌린다(브라우저·서버·네트워크 없음)
+JS = r'''// 대시보드 LP 카드 + 레버리지 · 대출 2줄 — 실제 app.js 블록(normLP · uiPaged(o.more 카드 펼침) · LP · 레버리지)을 가짜 의존성으로 돌린다(브라우저·서버·네트워크 없음)
 import fs from 'node:fs';
 const APP = fs.readFileSync(process.env.TJ_TEST_APP, 'utf8');
 const cut = (a, b) => { const i = APP.indexOf(a), j = i < 0 ? -1 : APP.indexOf(b, i + 1); if (i < 0 || j < 0) throw new Error('블록을 못 찾음: ' + a.slice(0, 50)); return APP.slice(i, j); };
 // 블록 경계 = 코드 줄만(주석 글자 금지 — 공개판 빌드는 주석을 지우므로 주석에 기대면 공개판에서만 실패한다)
-const B = [cut('  const CHAIN_KO = {', '  function normFlow(f) {'), cut('  const uiLim = (key, n)', '  const uiHidChip = '),
+const B = [cut('  const CHAIN_KO = {', '  function normFlow(f) {'), cut('  const uiWrapBtn = (b, o) =>', '  const uiHidChip = '),
   cut('  const pxrRaw = v =>', '  function venuesHTML() {'), cut('  function levS() {', '  function oaLoad(force) {')].join('\n');
 const R = [];
 const chk = (ok, msg, d) => R.push([!!ok, msg, ok ? undefined : d]);

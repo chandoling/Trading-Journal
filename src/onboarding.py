@@ -836,6 +836,9 @@ def _node_bad(group: str, got: dict) -> str:
         if k == nodekeys.ENV_QN:
             if not nodekeys.qn_parts(v):
                 return "QuickNode 엔드포인트 주소(https://이름.체인.quiknode.pro/토큰/ — 대시보드 Endpoints 에서 아무 체인 주소 하나)를 그대로 붙여 넣으세요"
+        elif k == nodekeys.ENV_CN:
+            if not nodekeys.cn_key(v):
+                return "Chainnodes API 키(8-4-4-4-12 형식) 또는 Base 주소(https://base-mainnet.chainnodes.org/키)를 그대로 붙여 넣으세요"
         elif k in (nodekeys.ENV_QN_BSC, nodekeys.ENV_QN_BASE):
             if not nodekeys._qn_url(v, "bsc" if k == nodekeys.ENV_QN_BSC else "base"):
                 return ("BSC" if k == nodekeys.ENV_QN_BSC else "Base") + " 엔드포인트는 https://…quiknode.pro/… 주소(그 체인용)를 그대로 붙여 넣으세요"
@@ -846,6 +849,12 @@ def _node_bad(group: str, got: dict) -> str:
 
 def _node_rpc(url: str, method: str, params: list, timeout: float = 15.0):
     import bf_engine
+    try:
+        cn9 = (urllib.parse.urlsplit(str(url)).hostname or "").lower().endswith(".chainnodes.org")
+    except ValueError:
+        cn9 = False
+    if cn9:
+        return bf_engine.rpc_call(url, method, params, timeout=timeout, retries=1, allow_null=True, deadline=time.time() + float(timeout) + 5.0)
     d = bf_engine.http_json(url, data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode(),
                             timeout=timeout, retries=1, rpc_methods=(method,))
     if not isinstance(d, dict) or "result" not in d:
@@ -865,6 +874,8 @@ def _node_test(group: str, got: dict) -> dict:
         return _alchemy_test(env9)
     if group == "quicknode":
         return _qn_test(env9)
+    if group == "chainnodes":
+        return _cn_test(env9)
     keys9 = [v for v in got.values() if v] + [env9.get(k, "") for k, _ in ss.GROUPS[group]["fields"]]
     us = nodekeys.urls(env9)
     out = []
@@ -912,7 +923,7 @@ def _node_err(e, auth: str = "인증 실패(키·주소 확인)") -> str:
 
 def _qn_test(env9: dict) -> dict:
     import nodekeys
-    us = nodekeys.urls(env9)
+    us = nodekeys.urls(env9, all_qn=True)
     u = nodekeys.trace_url(us, "base")
     if not u:
         return {"ok": False, "error": "시험할 값이 없어요 — QuickNode 엔드포인트 주소를 넣고 시험하세요"}
@@ -939,8 +950,83 @@ def _qn_test(env9: dict) -> dict:
                 if not r["trace"]:
                     r["err"] = "trace 응답 형식 이상"
     except Exception as e:
-        r["err"] = _node_err(e)
+        r["err"] = _node_err(e, auth=QN_AUTH_TXT)
     det = "Base " + ("최신 블록 OK · 내부 이동 trace 됨 — Base 옛 거래 내부 이동 채우기에만 써요" if r["ok"] else "실패 — " + r.get("err", ""))
+    if r["ok"] and nodekeys.qn_kh(env9) == nodekeys.qn_kh() and _qn_clear():
+        det += " · 거부 표시를 지웠어요 — 수집기가 곧 다시 QuickNode 를 써요"
+    return {"ok": True, "test": {"ok": r["ok"], "detail": det, "results": [r]}}
+
+
+QN_AUTH_TXT = "키 거부(1개월 체험이 끝났거나 크레딧을 다 썼을 수 있어요 — 유료로 바꾸거나 키를 지우세요)"
+
+
+def _qn_clear() -> bool:
+    try:
+        import nodekeys
+        return nodekeys.qn_reject_clear()
+    except Exception:
+        return False
+
+
+def _cn_rpc(u: str, method: str, params: list, timeout: float = 15.0):
+    try:
+        return _node_rpc(u, method, params, timeout=timeout)
+    except Exception as e:
+        ra9 = getattr(e, "retry_after", None)
+        if getattr(e, "kind", "") != "http429" or isinstance(ra9, bool) or not isinstance(ra9, (int, float)) or not 0 < ra9 <= CN_TEST_RETRY_MAX:
+            raise
+        time.sleep(float(ra9))
+        return _node_rpc(u, method, params, timeout=timeout)
+
+
+CN_TEST_WAIT = 2.0
+CN_TEST_RETRY_MAX = 5.0
+
+
+def _cn_test(env9: dict) -> dict:
+    import nodekeys
+    u = nodekeys.cn_url(env9)
+    if not u:
+        return {"ok": False, "error": "시험할 값이 없어요 — Chainnodes API 키(또는 Base 주소)를 넣고 시험하세요"}
+    r = {"chain": "base", "ok": False}
+
+    def err9(e):
+        k9 = getattr(e, "kind", "")
+        if (isinstance(e, RuntimeError) and "(코드 -32005)" in str(e)) or k9 in ("http429", "quota"):
+            ra9 = getattr(e, "retry_after", None)
+            return "한도·속도 제한(" + (f"약 {int(ra9) + 1}초 뒤" if isinstance(ra9, (int, float)) and not isinstance(ra9, bool) and ra9 > 0 else "잠시 뒤") + " 다시 시험하세요 — 키 문제 아님)"
+        if k9 in ("circuit", "budget"):
+            return "한도 냉각 중(잠시 뒤 다시 시험하세요 — 키 문제 아님)"
+        if k9 == "http4xx" and getattr(e, "code", None) in (401, 403):
+            return "키 거부(키를 다시 복사해 넣어 주세요)"
+        if k9 == "rpc" and isinstance(getattr(e, "code", None), int):
+            return f"노드가 거절(코드 {int(e.code)})"
+        return _node_err(e)
+    try:
+        try:
+            cid9 = int(str(_cn_rpc(u, "eth_chainId", [])), 16)
+        except (TypeError, ValueError):
+            cid9 = None
+        if cid9 != 8453:
+            r["err"] = f"다른 체인 주소(체인 번호 {cid9 if cid9 is not None else '모름'} — Base 는 8453)"
+        else:
+            head = int(str(_cn_rpc(u, "eth_blockNumber", [])), 16)
+            r["head"] = head
+            blk = _cn_rpc(u, "eth_getBlockByNumber", [hex(max(1, head - 20)), False])
+            txs = blk.get("transactions") if isinstance(blk, dict) else None
+            h9 = next((t for t in (txs or []) if isinstance(t, str) and len(t) == 66), None)
+            if not h9:
+                r["err"] = "최근 블록에서 tx 를 못 읽음"
+            else:
+                tr9 = _cn_rpc(u, "debug_traceTransaction", [h9, {"tracer": "callTracer"}], timeout=20)
+                r["trace"] = isinstance(tr9, dict) and bool(tr9.get("type"))
+                r["ok"] = r["trace"]
+                if not r["trace"]:
+                    r["err"] = "trace 응답 형식 이상"
+    except Exception as e:
+        r["err"] = err9(e)
+    det = "Base " + ("최신 블록 OK · 내부 이동 trace 됨 — Base 거래 내부 이동 확인에 먼저 써요(최근 약 한 달 반 · 그보다 옛 거래는 다음 노드)" if r["ok"]
+                     else "실패 — " + r.get("err", ""))
     return {"ok": True, "test": {"ok": r["ok"], "detail": det, "results": [r]}}
 
 
@@ -987,20 +1073,23 @@ def _node_save_probe(group: str, got: dict) -> tuple:
         net9, nm9 = _alchemy_save_net()
         u = nodekeys.alchemy_url(net9, env=got)
         tgt = [("Alchemy " + nm9, u)] if u else []
+    elif group == "chainnodes":
+        u = nodekeys.cn_url(got)
+        tgt = [("Chainnodes Base", u)] if u else []
     elif group == "quicknode":
         u = nodekeys.qn_chain_url(got.get(nodekeys.ENV_QN), "base")
         if u:
             tgt.append(("QuickNode Base", u))
     soft = []
     rejs9 = []
-    rej9 = (401,) if group == "alchemy" else NODE_REJECT_HTTP
+    rej9 = (401,) if group == "alchemy" else (NODE_REJECT_HTTP + (402,)) if group == "quicknode" else NODE_REJECT_HTTP
     for nm, u in tgt:
         try:
             _node_rpc(u, "eth_blockNumber", [], timeout=12)
         except Exception as e:
             if getattr(e, "kind", "") == "http4xx" and getattr(e, "code", None) in rej9:
                 if group == "quicknode":
-                    rejs9.append(f"{nm} 노드가 이 주소를 거부했어요(HTTP {int(e.code)})")
+                    rejs9.append(f"{nm} 노드가 이 주소를 거부했어요(HTTP {int(e.code)} — 1개월 체험이 끝났으면 유료로 바꾸세요)")
                     continue
                 return "reject", f"{nm} 노드가 이 키를 거부했어요(HTTP {int(e.code)})"
             if group == "alchemy" and getattr(e, "kind", "") == "http4xx":
@@ -1109,6 +1198,10 @@ def status() -> dict:
         cfg = raw
     st = ss.read_settings()
     wl = ss.wallet_list(raw)
+    try:
+        cwl = ss.chain_wallet_list(raw)
+    except Exception:
+        cwl = []
     late9 = _recon_late()
     try:
         import wallet_register as _wr
@@ -1131,7 +1224,7 @@ def status() -> dict:
     runners = ss.runner_status()
     units = {}
     if runners:
-        for u in ss.RUNNER_UNITS:
+        for u in ss.runner_units(cfg):
             hb = runners.get(u)
             try:
                 ready, why, fp = ss.unit_inputs(u, cfg, env)
@@ -1163,8 +1256,9 @@ def status() -> dict:
     p = _pending()
     return {
         "ok": True, "demo": DEMO, "csrf": ss.csrf_token(),
-        "needsSetup": not DEMO and not wl and not st.get("onboarded"), "onboarded": bool(st.get("onboarded")),
+        "needsSetup": not DEMO and not wl and not cwl and not st.get("onboarded"), "onboarded": bool(st.get("onboarded")),
         "wallets": wl, "chains": [{"key": k, "name": n} for k, n in ss.evm_chains(raw)],
+        "chainWallets": cwl, "nonevm": _nonevm_status(),
         "solNeedsHelius": (raw.get("sol") or {}).get("rpc") == "helius",
         "evmNeedsKeys": _evm_needs_keys(raw),
         "evmNeedsAlchemy": _evm_needs_alchemy(raw),
@@ -1187,6 +1281,14 @@ def status() -> dict:
         "depaddr": dep,
         "perp": _perp_status(raw),
     }
+
+
+def _nonevm_status() -> list:
+    try:
+        import chain_registry as reg
+        return [{"key": c, "name": reg.display_name(c), "native": reg.native_symbol(c), "available": reg.available(c)} for c in reg.CHAINS]
+    except Exception:
+        return []
 
 
 def _evm_needs_keys(raw) -> bool:
@@ -1488,6 +1590,19 @@ def _dispatch(act: str, b: dict) -> dict:
         if not RL.hit("chains_set", 20, 60):
             return {"ok": False, "rate": True, "error": "너무 자주 눌렀어요 — 1분 뒤 다시"}
         return chainoff.set_enabled(b.get("chain"), b.get("on"))
+    if act == "chain_wallets/add":
+        import wallet_register
+        r = wallet_register.register_chain_wallet(str(b.get("chain") or ""), address=b.get("address"), label=b.get("label"),
+                                                  mode=str(b.get("mode") or "address"), descriptor=b.get("descriptor"),
+                                                  gap_limit=b.get("gap_limit", 20), source="setup",
+                                                  script_type=b.get("script_type"))
+        return {"ok": True, "added": r}
+    if act == "chain_wallets/remove":
+        n = ss.remove_chain_wallet(str(b.get("chain") or ""), b.get("address"))
+        return {"ok": bool(n), "removed": n, **({} if n else {"error": "없는 지갑입니다"})}
+    if act == "chain_wallets/label":
+        n = ss.rename_chain_wallet(str(b.get("chain") or ""), b.get("address"), b.get("label"))
+        return {"ok": bool(n), **({} if n else {"error": "없는 지갑입니다"})}
     if act == "wallets/remove":
         n = ss.remove_wallet(b.get("address"))
         return {"ok": bool(n), "removed": n, **({} if n else {"error": "없는 주소입니다"})}
@@ -1554,6 +1669,8 @@ def _dispatch(act: str, b: dict) -> dict:
         fields = [k for k, _ in ss.GROUPS[g]["fields"]]
         if act == "keys/delete":
             ss.write_env({k: None for k in fields + list(ss.GROUPS[g].get("legacy", ()))})
+            if g == "quicknode":
+                _qn_clear()
             if g in ss.NODE_GROUPS:
                 return {"ok": True, "apply": _node_apply(g, key_change=True)}
             if g in ss.EXCHANGES:
@@ -1580,6 +1697,9 @@ def _dispatch(act: str, b: dict) -> dict:
             bad = _node_bad(g, got)
             if bad:
                 return {"ok": False, "error": bad}
+            if g == "chainnodes":
+                import nodekeys
+                got = {k: (nodekeys.cn_key(v) if k == nodekeys.ENV_CN else v) for k, v in got.items()}
             lim = _limited("save:" + g, 8, 60)
             if lim:
                 lim["error"] = "저장을 너무 자주 눌렀습니다 — 1분 뒤 다시"
@@ -1590,6 +1710,8 @@ def _dispatch(act: str, b: dict) -> dict:
             old9 = ss.read_env()
             chg9 = any(str(old9.get(k) or "").strip() != v for k, v in got.items())
             ss.write_env(dict(got, **{k: None for k in ss.GROUPS[g].get("legacy", ())}))
+            if g == "quicknode" and (chg9 or pr9 == "ok"):
+                _qn_clear()
             if chg9:
                 import nodekeys
                 with ss.LOCK:

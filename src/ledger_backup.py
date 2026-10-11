@@ -308,6 +308,11 @@ STREAM_STATE = {
     "bsc": (re.compile(r"^emitted_bsc\.json$"),),
     "ex": (re.compile(r"^upbit_orders_state\.json$"), re.compile(r"^exf_state\.json$")),
 }
+try:
+    import chain_registry as _reg9
+    STREAM_STATE.update({c9: (re.compile("^" + re.escape(_reg9.SPECS[c9].emitted_file) + "$"),) for c9 in _reg9.CHAINS})
+except Exception:
+    pass
 NEW_LEDGER_OK = "ledger_new_ok.json"
 NEW_LEDGER_OK_TTL = 3600
 
@@ -572,7 +577,143 @@ def _gain(paths: list) -> int:
     return sum(sz for nl, n, sz in seen.values() if n >= nl)
 
 
-def relief_candidates(step: str, db_path: str, home: str = None, now: float = None) -> list:
+RESTORE_TABLES = ("meta", "postings", "raw_txs", "raw_ex", "inbox_offsets")
+_WAL_MAGIC = (0x377F0682, 0x377F0683)
+_VERIFIED = {}
+_VERIFIED_MAX = 256
+
+
+def _wal_head(wal: str, ps: int) -> str:
+    with open(wal, "rb") as f:
+        h = f.read(32)
+    if len(h) < 32:
+        return "WAL 머리 잘림"
+    magic = int.from_bytes(h[:4], "big")
+    if magic not in _WAL_MAGIC:
+        return "WAL 머리 손상(매직)"
+    if int.from_bytes(h[8:12], "big") != ps:
+        return f"WAL 페이지 크기 {int.from_bytes(h[8:12], 'big')} ≠ 원장 {ps}"
+    bo = "big" if magic & 1 else "little"
+    s0 = s1 = 0
+    for i in range(0, 24, 8):
+        s0 = (s0 + int.from_bytes(h[i:i + 4], bo) + s1) & 0xFFFFFFFF
+        s1 = (s1 + int.from_bytes(h[i + 4:i + 8], bo) + s0) & 0xFFFFFFFF
+    if (s0, s1) != (int.from_bytes(h[24:28], "big"), int.from_bytes(h[28:32], "big")):
+        return "WAL 머리 체크섬 불일치"
+    return ""
+
+
+def _restore_state(path: str, size: int, deep: bool) -> tuple:
+    import db as dbm
+    try:
+        with open(path, "rb") as f:
+            hdr = f.read(100)
+    except OSError as e:
+        return "unknown", f"검사 못 함: {common.safe_err(e)[:120]}"
+    if size < 512 or not hdr.startswith(b"SQLite format 3\x00"):
+        return "invalid", f"파일 머리가 SQLite 원장이 아님(크기 {size:,}바이트 — 덮어쓰기·잘림)"
+    ps = int.from_bytes(hdr[16:18], "big")
+    ps = 65536 if ps == 1 else ps
+    if ps < 512 or ps > 65536 or ps & (ps - 1):
+        return "invalid", f"머리의 페이지 크기 칸 손상({ps})"
+    if size % ps:
+        return "invalid", f"파일 크기({size:,})가 페이지 크기({ps}) 배수가 아님 — 잘림·덧붙음"
+    wal = path + "-wal"
+    use_wal = 2 in (hdr[18], hdr[19]) and os.path.isfile(wal) and os.path.getsize(wal) > 0
+    if use_wal:
+        try:
+            w9 = _wal_head(wal, ps)
+        except OSError as e:
+            return "unknown", f"WAL 검사 못 함: {common.safe_err(e)[:120]}"
+        if w9:
+            return "invalid", w9
+    else:
+        n9 = int.from_bytes(hdr[28:32], "big")
+        if n9 and hdr[24:28] == hdr[92:96] and n9 * ps > size:
+            return "invalid", f"파일이 머리의 페이지 수보다 짧음({size:,} < {n9 * ps:,}바이트 — 잘림)"
+    try:
+        c = sqlite3.connect(common.sqlite_ro_uri(path, immutable=not use_wal), uri=True, timeout=10)
+    except sqlite3.Error as e:
+        return ("invalid" if corrupt_error(e) else "unknown"), f"열기 실패: {common.safe_err(e)[:160]}"
+    try:
+        names = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        miss = [t for t in RESTORE_TABLES if t not in names]
+        if miss:
+            return "invalid", "표 없음: " + ", ".join(miss)
+        meta = dict(c.execute("SELECT k, v FROM meta WHERE k IN ('schema_version', 'rebuild_incomplete', 'data_rev')").fetchall())
+        sv = meta.get("schema_version")
+        if sv is None or str(sv) != str(dbm.SCHEMA_VERSION):
+            return "invalid", f"원장 세대 {sv} ≠ 코드 {dbm.SCHEMA_VERSION}(이 코드로 되돌릴 수 없음)"
+        if meta.get("rebuild_incomplete"):
+            return "invalid", "재파생 미완 표식(rebuild_incomplete)"
+        try:
+            if int(str(meta.get("data_rev") or 0).strip()) > dbm.DATA_REV:
+                return "invalid", f"데이터 개정 {meta.get('data_rev')} > 코드 {dbm.DATA_REV}"
+        except ValueError:
+            return "invalid", "데이터 개정 번호(meta data_rev) 해석 불가"
+        for t in _LIGHT_TABLES:
+            if t in names:
+                c.execute(f'SELECT max(rowid) FROM "{t}"').fetchone()
+                c.execute(f'SELECT rowid FROM "{t}" LIMIT 1').fetchone()
+        if deep:
+            rows = [r[0] for r in c.execute("PRAGMA quick_check").fetchall()]
+            if rows != ["ok"]:
+                return "invalid", "빠른 검사(quick_check) 실패: " + "; ".join(str(x) for x in rows[:3])[:200]
+        return "valid", ""
+    except sqlite3.Error as e:
+        return ("invalid" if corrupt_error(e) else "unknown"), f"읽기 실패: {common.safe_err(e)[:160]}"
+    finally:
+        c.close()
+
+
+def restore_state(path: str, deep: bool = True) -> tuple:
+    try:
+        st = os.stat(path)
+        wst = os.stat(path + "-wal") if os.path.exists(path + "-wal") else None
+    except FileNotFoundError:
+        return "invalid", "파일 없음"
+    except OSError as e:
+        return "unknown", f"검사 못 함: {common.safe_err(e)[:120]}"
+    key = (os.path.abspath(path), st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns,
+           (wst.st_size, wst.st_mtime_ns) if wst else None)
+    if deep and key in _VERIFIED:
+        return _VERIFIED[key]
+    try:
+        res = _restore_state(path, st.st_size, deep)
+    except Exception as e:
+        res = ("unknown", f"검사 못 함: {type(e).__name__}: {common.safe_err(e)[:120]}")
+    if deep and res[0] != "unknown":
+        if len(_VERIFIED) >= _VERIFIED_MAX:
+            _VERIFIED.clear()
+        _VERIFIED[key] = res
+    return res
+
+
+def _verified_split(paths: list) -> tuple:
+    if len(paths) < 2:
+        return 0, {}
+    held = {}
+    for i in range(len(paths) - 1, -1, -1):
+        st9, why9 = restore_state(paths[i], deep=True)
+        if st9 == "valid":
+            return i, {k: w + " — 안 지움(더 오래된 검증된 사본을 보호본으로)" for k, w in held.items()}
+        held[i] = ("복구 검사 실패: " if st9 == "invalid" else "복구 검사 못 함: ") + why9
+    return 0, {k: w + " — 검증된 사본이 하나도 없어 이 계열은 안 지움" for k, w in held.items()}
+
+
+def _off_short(path: str, devs) -> bool:
+    if devs is None:
+        return False
+    try:
+        return dev_of(path) not in devs
+    except OSError:
+        return False
+
+
+OFF_SHORT_WHY = "다른 디스크(모자란 디스크가 아님 — 지워도 도움 안 됨)"
+
+
+def relief_candidates(step: str, db_path: str, home: str = None, now: float = None, devs=None) -> list:
     now = time.time() if now is None else now
     sd = os.path.dirname(os.path.abspath(db_path))
     base = os.path.basename(db_path)
@@ -597,17 +738,27 @@ def relief_candidates(step: str, db_path: str, home: str = None, now: float = No
     elif step == "pre_extrebuild":
         rx = re.compile(re.escape(base) + r"\.pre_extrebuild_(\d{8}_\d{6})$")
         pres = sorted(n for n in names if rx.match(n) and os.path.isfile(os.path.join(sd, n)))
-        for n in pres[:-1]:
+        if len(pres) > 1 and _off_short(sd, devs):
+            out += [{"name": n, "kind": "pre_extrebuild", "skip": OFF_SHORT_WHY} for n in pres[:-1]]
+            pres = []
+        k9, held9 = _verified_split([os.path.join(sd, n) for n in pres])
+        for n in pres[:k9]:
             p = os.path.join(sd, n)
             out.append({"name": n, "kind": "pre_extrebuild", "paths": [p + s for s in ("", "-wal", "-shm")], "dir": False})
+        out += [{"name": pres[i9], "kind": "pre_extrebuild", "skip": w9} for i9, w9 in sorted(held9.items())]
     elif step == "daily":
         bd = os.path.join(sd, "backups")
         try:
             days = sorted(n for n in os.listdir(bd) if _DB_RX.match(n) and os.path.isfile(os.path.join(bd, n)))
         except OSError:
             days = []
-        for n in days[:-1]:
+        if len(days) > 1 and _off_short(bd, devs):
+            out += [{"name": "backups/" + n, "kind": "daily", "skip": OFF_SHORT_WHY} for n in days[:-1]]
+            days = []
+        k9, held9 = _verified_split([os.path.join(bd, n) for n in days])
+        for n in days[:k9]:
             out.append({"name": "backups/" + n, "kind": "daily", "paths": [os.path.join(bd, n)], "dir": False})
+        out += [{"name": "backups/" + days[i9], "kind": "daily", "skip": w9} for i9, w9 in sorted(held9.items())]
     elif step == "failed":
         bdir = os.path.dirname(sd)
         try:
@@ -655,7 +806,7 @@ def relieve(db_path: str, short, home: str = None, now: float = None, log=None, 
             for step in RELIEF_STEPS:
                 if not need:
                     break
-                cands = relief_candidates(step, db_path, home=home, now=now)
+                cands = relief_candidates(step, db_path, home=home, now=now, devs=set(need))
                 for c in cands:
                     if c.get("skip"):
                         skipped[c["name"]] = c["skip"]

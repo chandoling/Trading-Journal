@@ -20,11 +20,17 @@ ENV_ALCHEMY = "TJ_ALCHEMY_KEY"
 ENV_ANKR = "TJ_ANKR_KEY"
 ENV_ES = "TJ_ETHERSCAN_KEY"
 INDEX_SOURCES = ("etherscan", "routescan", "blockscout", "alchemy", "ankr")
-FINAL_FAIL = ("unsupported", "nokey", "slow", "partial")
+FINAL_FAIL = ("unsupported", "nokey", "slow", "partial", "cap")
 KEYED = ("etherscan", "alchemy", "ankr")
 MAX_CAS = 3000
-MAX_QUERY = 1500
+MAX_QUERY = 3000
 ES_PAGES = 5
+ES_LIKE = ("etherscan", "routescan")
+ES_V = 2
+ES_ROWS = {"etherscan": 1000, "routescan": 10000}
+ES_ROW_FLOOR = 1000
+ES_BLOCK_PAGES = 10
+ES_DEFER_RUNS = 6
 BS_PAGES = 40
 AL_PAGES = 20
 AN_PAGES = 5
@@ -244,6 +250,9 @@ def need_refresh(ent: dict, sig: dict, now: float = None, srcs=None) -> tuple:
         if k in old and v is not None and old.get(k) is not None and str(old.get(k)) != str(v):
             return True, f"changed:{k}"
     fail = ent.get("fail") if isinstance(ent.get("fail"), dict) else {}
+    rs9, up9 = _es_due(ent, srcs)
+    if rs9 or up9:
+        return True, ("resume:" if rs9 else "upgrade:") + "+".join(rs9 + up9)
     soft = {s9 for s9, v in fail.items() if str(v).split(":")[0] not in FINAL_FAIL}
     if soft and now - float(ent.get("at") or 0) >= RETRY_FAIL_SEC:
         return True, "retry"
@@ -252,6 +261,55 @@ def need_refresh(ent: dict, sig: dict, now: float = None, srcs=None) -> tuple:
         if s in INDEX_SOURCES and s not in done:
             return True, f"new:{s}"
     return False, "cache"
+
+
+def _es_cur(c):
+    if not isinstance(c, dict) or c.get("v") != ES_V:
+        return None
+    try:
+        int(c.get("lo") or 0), int(c.get("pg") or 0)
+        if c.get("hi") is not None:
+            int(c["hi"])
+    except (TypeError, ValueError):
+        return None
+    return c
+
+
+def _es_due(ent: dict, srcs) -> tuple:
+    if not isinstance(ent, dict) or not ent.get("at"):
+        return [], []
+    esd = ent.get("es") if isinstance(ent.get("es"), dict) else {}
+    ok = ent.get("ok") if isinstance(ent.get("ok"), dict) else {}
+    fail = ent.get("fail") if isinstance(ent.get("fail"), dict) else {}
+    rs, up = [], []
+    for s9 in srcs or ():
+        if s9 not in ES_LIKE:
+            continue
+        c = _es_cur(esd.get(s9))
+        fk = str(fail.get(s9, "")).split(":")[0]
+        if c is None:
+            if s9 in ok or fk == "partial":
+                up.append(s9)
+        elif not c.get("done") and fk == "more":
+            rs.append(s9)
+    return rs, up
+
+
+def _es_usable(chain: str, src: str, env: dict = None) -> bool:
+    row = chain_row(chain)
+    if src == "etherscan":
+        return row.get("etherscan") == "free" and bool(es_key(env))
+    return bool(row.get("routescan")) if src == "routescan" else False
+
+
+def run_sources(srcs, why) -> list:
+    w9 = str(why or "")
+    if srcs is not None and w9.startswith(("resume:", "upgrade:")):
+        only = [x for x in w9.split(":", 1)[1].split("+") if x]
+        sub = [x for x in srcs if x in only]
+        if sub:
+            return sub
+    return srcs
 
 
 def _clean(msg: str, env: dict = None) -> str:
@@ -294,13 +352,71 @@ def _http(url: str, **kw):
         raise SourceFail(k, common.redact_urls(str(e))[:120]) from e
 
 
-def _es_like(base_url: str, params: dict, upto, out: dict, meta: dict, src: str, budget: bool, sleep) -> int:
+def es_cursor(old, upto) -> dict:
+    c = _es_cur(old)
+    hi = int(upto) if upto else None
+    if c is not None and not c.get("done"):
+        out = dict(c, lo=int(c.get("lo") or 0), pg=int(c.get("pg") or 0), n=int(c.get("n") or 0) + 1)
+        if c.get("hi") is not None and (hi is None or hi > int(c["hi"])):
+            w0 = c["want"] if "want" in c else hi
+            out["want"] = None if (hi is None or w0 is None) else max(int(w0), hi)
+        return out
+    if c is not None:
+        nxt = {"v": ES_V, "g": int(c.get("g") or 1) + 1, "lo": int(c.get("end") if c.get("end") is not None else c.get("lo") or 0), "pg": 0,
+               "hi": hi, "done": False, "n": 1}
+        if c.get("gap"):
+            nxt["gap"] = list(c["gap"])[-20:]
+        return nxt
+    return {"v": ES_V, "g": 1, "lo": 0, "pg": 0, "hi": hi, "done": False, "n": 1}
+
+
+def _es_done(cur: dict, last) -> None:
+    cur["done"] = True
+    cur["pg"] = 0
+    lo9 = int(cur.get("lo") or 0)
+    cur["end"] = max(lo9, int(cur["hi"])) if cur.get("hi") is not None else max(lo9, int(last or 0))
+
+
+def _es_roll(cur: dict) -> bool:
+    if "want" not in cur:
+        return False
+    want = cur.pop("want")
+    end = int(cur.get("end") or 0)
+    if want is not None and int(want) <= end:
+        return False
+    cur.update(g=int(cur.get("g") or 1) + 1, lo=end, pg=0, hi=None if want is None else int(want), done=False, n=1)
+    cur.pop("end", None)
+    return True
+
+
+def _es_like(base_url: str, params: dict, upto, out: dict, meta: dict, src: str, budget: bool, sleep, cur: dict = None,
+             deadline: float = None) -> int:
     import bf_engine
-    start, calls = 0, 0
-    for _p in range(ES_PAGES):
-        q = dict(params, module="account", action="tokentx", startblock=start, page=1, offset=10000, sort="asc")
-        if upto:
-            q["endblock"] = int(upto)
+    cur = cur if isinstance(cur, dict) else es_cursor(None, upto)
+    rows9 = int(ES_ROWS.get(src) or ES_ROW_FLOOR)
+    max_calls = max(1, ES_PAGES * 10000 // rows9)
+    calls, last_fp, seen_last = 0, None, None
+    while True:
+        hi = cur.get("hi")
+        if hi is not None and int(cur["lo"]) > int(hi):
+            _es_done(cur, seen_last)
+            if _es_roll(cur):
+                continue
+            break
+        if calls >= max_calls:
+            raise SourceFail("more", f"한 실행 몫 {calls}콜 — 다음 실행에서 {int(cur['lo'])} 블록부터 이어서")
+        if deadline is not None and time.time() > deadline:
+            raise SourceFail("more", f"시간 상한 — 다음 실행에서 {int(cur['lo'])} 블록부터 이어서")
+        pg = int(cur.get("pg") or 0)
+        lo = int(cur["lo"])
+        if pg > 0:
+            size = ES_ROW_FLOOR
+            q = dict(params, module="account", action="tokentx", startblock=lo, endblock=lo, page=pg, offset=size, sort="asc")
+        else:
+            size = rows9
+            q = dict(params, module="account", action="tokentx", startblock=lo, page=1, offset=size, sort="asc")
+            if hi is not None:
+                q["endblock"] = int(hi)
         if budget:
             try:
                 import evm_watch
@@ -318,56 +434,93 @@ def _es_like(base_url: str, params: dict, upto, out: dict, meta: dict, src: str,
         if str(d.get("status")) == "0":
             msg = f"{d.get('message')} {res if isinstance(res, str) else ''}"
             if "no transactions found" in msg.lower() or "no records found" in msg.lower():
-                return calls
-            low = msg.lower()
-            if "not supported" in low or "upgrade your api plan" in low or "unsupported chainid" in low or "chain not supported" in low:
-                raise SourceFail("unsupported", msg[:80])
-            if "day/limit" in low or ("daily" in low and "limit" in low):
-                if budget:
-                    try:
-                        import evm_watch
-                        evm_watch.es_daily_trip(msg)
-                    except ImportError:
-                        pass
-                raise SourceFail("quota", msg[:80])
-            if "api key" in low:
-                raise SourceFail("key", "키 거부")
-            raise SourceFail("error", common.redact_urls(msg)[:80])
+                res = []
+            else:
+                low = msg.lower()
+                if "not supported" in low or "upgrade your api plan" in low or "unsupported chainid" in low or "chain not supported" in low:
+                    raise SourceFail("unsupported", msg[:80])
+                if "day/limit" in low or ("daily" in low and "limit" in low):
+                    if budget:
+                        try:
+                            import evm_watch
+                            evm_watch.es_daily_trip(msg)
+                        except ImportError:
+                            pass
+                    raise SourceFail("quota", msg[:80])
+                if "api key" in low:
+                    raise SourceFail("key", "키 거부")
+                raise SourceFail("error", common.redact_urls(msg)[:80])
         if not isinstance(res, list):
             raise SourceFail("error", "result 형식")
-        last = start
+        blks, prev = [], None
         for r in res:
-            if not isinstance(r, dict):
-                continue
-            _add(out, meta, r.get("contractAddress"), src, r.get("tokenSymbol"), r.get("tokenDecimal"))
             try:
-                last = max(last, int(r.get("blockNumber") or 0))
-            except (TypeError, ValueError):
-                pass
-        if len(res) < 10000:
-            return calls
-        if last <= start:
-            raise SourceFail("partial", "한 블록에 1만 줄 넘음")
-        start = last
+                b9 = int((r or {}).get("blockNumber"))
+            except (TypeError, ValueError, AttributeError):
+                raise SourceFail("error", "응답 행 형식(blockNumber)") from None
+            if b9 < lo or (pg > 0 and b9 != lo) or (hi is not None and b9 > int(hi)) or (prev is not None and b9 < prev):
+                raise SourceFail("error", "응답 블록 범위·정렬 어긋남 — 완료로 안 침")
+            prev = b9
+            blks.append(b9)
+        if pg > 0 and res:
+            fp = (len(res), json.dumps(res[0], sort_keys=True, default=str), json.dumps(res[-1], sort_keys=True, default=str))
+            if fp == last_fp:
+                raise SourceFail("error", "같은 쪽 반복(제공자가 page 무시) — 완료로 안 침")
+            last_fp = fp
+        over = 0
+        for r in res:
+            ca9 = str(r.get("contractAddress") or "").lower()
+            if CA_RE.match(ca9) and ca9 not in out and ca9 != "0x" + "0" * 40 and len(out) >= MAX_CAS:
+                over += 1
+                continue
+            _add(out, meta, ca9, src, r.get("tokenSymbol"), r.get("tokenDecimal"))
+        if over:
+            raise SourceFail("cap", f"후보 상한 {MAX_CAS:,} — {lo} 블록부터 {over}개+ 미확인")
+        cur["rows"] = int(cur.get("rows") or 0) + len(res)
+        short = len(res) < min(size, ES_ROW_FLOOR)
+        if blks:
+            seen_last = blks[-1]
+        if pg > 0:
+            if short:
+                cur["lo"], cur["pg"] = lo + 1, 0
+            elif pg >= ES_BLOCK_PAGES:
+                gp = list(cur.get("gap") or [])
+                if lo not in gp:
+                    gp.append(lo)
+                cur["gap"] = gp[-20:]
+                cur["lo"], cur["pg"] = lo + 1, 0
+            else:
+                cur["pg"] = pg + 1
+            last_fp = None if cur["pg"] == 0 else last_fp
+        elif short:
+            _es_done(cur, seen_last)
+            if not _es_roll(cur):
+                break
+        elif blks[-1] > lo:
+            cur["lo"] = blks[-1]
+        else:
+            cur["pg"] = 2 if size == ES_ROW_FLOOR else 1
         sleep(0.5)
-    raise SourceFail("partial", f"{ES_PAGES}쪽 상한")
+    if cur.get("gap"):
+        raise SourceFail("partial", f"한 블록 1만 줄 넘음 {len(cur['gap'])}블록 — 그 블록 일부 미확인")
+    return calls
 
 
-def src_etherscan(chain: str, wallet: str, upto=None, env=None, sleep=time.sleep, out=None, meta=None) -> int:
+def src_etherscan(chain: str, wallet: str, upto=None, env=None, sleep=time.sleep, out=None, meta=None, cur=None, deadline=None) -> int:
     cid = chain_row(chain).get("chain_id")
     k = es_key(env)
     if not cid or not k:
         raise SourceFail("nokey" if not k else "unsupported")
     return _es_like("https://api.etherscan.io/v2/api", {"chainid": int(cid), "address": wallet, "apikey": k}, upto, out, meta,
-                    "etherscan", True, sleep)
+                    "etherscan", True, sleep, cur=cur, deadline=deadline)
 
 
-def src_routescan(chain: str, wallet: str, upto=None, sleep=time.sleep, out=None, meta=None) -> int:
+def src_routescan(chain: str, wallet: str, upto=None, sleep=time.sleep, out=None, meta=None, cur=None, deadline=None) -> int:
     cid = chain_row(chain).get("chain_id")
     if not cid:
         raise SourceFail("unsupported")
     return _es_like(f"https://api.routescan.io/v2/network/mainnet/evm/{int(cid)}/etherscan/api", {"address": wallet}, upto, out, meta,
-                    "routescan", False, sleep)
+                    "routescan", False, sleep, cur=cur, deadline=deadline)
 
 
 def src_blockscout(base: str, wallet: str, sleep=time.sleep, out=None, meta=None) -> int:
@@ -606,15 +759,31 @@ def _discover(chain: str, wallet: str, *, upto=None, cfg: dict = None, env: dict
     srcs = list(sources) if sources is not None else plan(chain, cfg, env)
     cas, meta, ok, fail, calls = {}, {}, {}, {}, {}
     w = str(wallet).lower()
+    es_out, ran = {}, []
+    ent0 = {}
+    if any(s in ES_LIKE for s in srcs):
+        try:
+            ent0 = entry(chain, w)
+        except Exception:
+            ent0 = {}
     for s in srcs:
         if s == "logs":
             continue
         one = {}
+        ran.append(s)
         try:
-            if s == "etherscan":
-                n = src_etherscan(chain, w, upto, env, sleep, one, meta)
-            elif s == "routescan":
-                n = src_routescan(chain, w, upto, sleep, one, meta)
+            if s in ES_LIKE:
+                cur9 = es_out[s] = es_cursor(((ent0.get("es") or {}) if isinstance(ent0.get("es"), dict) else {}).get(s), upto)
+                osk9 = ent0.get("skip") if isinstance(ent0.get("skip"), dict) else {}
+                om9 = ent0.get("meta") if isinstance(ent0.get("meta"), dict) else {}
+                for ca9, ss9 in sorted(((ent0.get("cas") or {}) if isinstance(ent0.get("cas"), dict) else {}).items()):
+                    if s in (ss9 or ()) and not (ca9 in osk9 and skip_final(osk9[ca9])):
+                        m9 = om9.get(ca9) if isinstance(om9.get(ca9), dict) else {}
+                        _add(one, meta, ca9, s, m9.get("sym"), m9.get("dec"))
+                if s == "etherscan":
+                    n = src_etherscan(chain, w, upto, env, sleep, one, meta, cur=cur9, deadline=deadline)
+                else:
+                    n = src_routescan(chain, w, upto, sleep, one, meta, cur=cur9, deadline=deadline)
             elif s == "blockscout":
                 b = blockscout_base(chain, cfg)
                 if not b:
@@ -632,13 +801,14 @@ def _discover(chain: str, wallet: str, *, upto=None, cfg: dict = None, env: dict
             ok[s] = len(one)
         except SourceFail as e:
             fail[s] = _clean(f"{e.kind}: {str(e)[len(e.kind) + 2:]}")
-            if e.kind == "partial":
+            if e.kind in ("partial", "more", "cap"):
                 ok[s] = len(one)
         except Exception as e:
             fail[s] = _clean("error: " + common.safe_err(e))
         for ca, ss in one.items():
             cas.setdefault(ca, set()).update(ss)
     if "logs" in srcs and not any(s in ok for s in INDEX_SOURCES):
+        ran.append("logs")
         one = {}
         try:
             calls["logs"] = src_logs(chain, w, cfg, upto, logs_max_calls, sleep=sleep, out=one, meta=meta, deadline=deadline)
@@ -649,8 +819,11 @@ def _discover(chain: str, wallet: str, *, upto=None, cfg: dict = None, env: dict
             fail["logs"] = _clean("error: " + common.safe_err(e))
         for ca, ss in one.items():
             cas.setdefault(ca, set()).update(ss)
-    return {"cas": {k: sorted(v) for k, v in cas.items()}, "meta": {k: v for k, v in meta.items() if k in cas},
-            "ok": ok, "fail": fail, "calls": calls}
+    out = {"cas": {k: sorted(v) for k, v in cas.items()}, "meta": {k: v for k, v in meta.items() if k in cas},
+           "ok": ok, "fail": fail, "calls": calls, "ran": ran}
+    if es_out:
+        out["es"] = es_out
+    return out
 
 
 def scam_name(sym) -> str:
@@ -799,10 +972,21 @@ def recon_extra(prep: dict, upto=None, sleep=time.sleep, deadline: float = None,
             out["status"][w] = "pending"
             continue
         if need:
-            r = dfn(chain, w, upto=upto, cfg=cfg, env=env, sources=srcs, sleep=sleep, deadline=dl, burst=(why == "first"))
+            run9 = run_sources(srcs, why)
+            r = dfn(chain, w, upto=upto, cfg=cfg, env=env, sources=run9, sleep=sleep, deadline=dl, burst=(why == "first"))
             save_result(chain, w, r, sig, why)
             cas, meta, fail, ok9 = r["cas"], r["meta"], r["fail"], r.get("ok") or {}
-            out["status"][w] = "ok" if any(s9 in INDEX_SOURCES or s9 == "logs" for s9 in ok9) else "fail"
+            if run9 != srcs:
+                ran9 = set(r.get("ran") or run9 or ())
+                cas = {k9: list(v9) for k9, v9 in (ent.get("cas") or {}).items()}
+                for k9, v9 in r["cas"].items():
+                    cas[k9] = sorted(set(cas.get(k9) or ()) | set(v9))
+                meta = {k9: dict(v9) for k9, v9 in (ent.get("meta") or {}).items() if isinstance(v9, dict)}
+                for k9, v9 in r["meta"].items():
+                    meta[k9] = dict(meta.get(k9) or {}, **v9)
+                ok9 = dict({k9: v9 for k9, v9 in (ent.get("ok") or {}).items() if k9 not in ran9}, **ok9)
+                fail = dict({k9: v9 for k9, v9 in (ent.get("fail") or {}).items() if k9 not in ran9}, **fail)
+            out["status"][w] = _wstatus(ok9, fail, r.get("es") or {})
         else:
             cas, meta, fail, ok9 = ent.get("cas") or {}, ent.get("meta") or {}, ent.get("fail") or {}, ent.get("ok") or {}
             out["status"][w] = "cache"
@@ -830,7 +1014,21 @@ def recon_extra(prep: dict, upto=None, sleep=time.sleep, deadline: float = None,
                 out["meta"].setdefault(ca, dict(meta[ca]))
         if fail:
             out["fail"][w] = dict(fail)
+        if len(cand) > MAX_QUERY:
+            out["fail"].setdefault(w, {})["query"] = f"cap: 질문 상한 {MAX_QUERY:,} — {len(cand) - MAX_QUERY:,}개 이번 대사에서 안 물음"
     return out
+
+
+def _wstatus(ok9: dict, fail: dict, es: dict) -> str:
+    got = [s9 for s9 in (ok9 or {}) if s9 in INDEX_SOURCES or s9 == "logs"]
+    if not got:
+        return "fail"
+    if any(s9 not in (fail or {}) for s9 in got):
+        return "ok"
+    for s9 in got:
+        if s9 in ES_LIKE and str((fail or {}).get(s9, "")).startswith("more") and int(((es or {}).get(s9) or {}).get("n") or 0) < ES_DEFER_RUNS:
+            return "pending"
+    return "partial"
 
 
 def recon_extra_safe(prep: dict, upto=None, **kw) -> dict:
@@ -1051,6 +1249,10 @@ def _ok_sources(ext: dict, wl: str) -> list:
 def save_result(chain: str, wallet: str, r: dict, sig: dict, why: str = "", skip: dict = None) -> None:
     k = pair_key(chain, wallet)
 
+    ran9 = set(r.get("ran") or ()) if isinstance(r.get("ran"), (list, tuple, set)) else None
+    only9 = str(why or "").startswith(("resume:", "upgrade:")) and ran9 is not None
+    good9 = {s9 for s9 in (ran9 or ()) if s9 in (r.get("ok") or {}) and s9 not in (r.get("fail") or {})}
+
     def fn(cur):
         old = (cur.get("pairs") or {}).get(k) or {}
         cas9, meta9 = dict(r.get("cas") or {}), {k9: dict(v9) for k9, v9 in (r.get("meta") or {}).items() if isinstance(v9, dict)}
@@ -1060,6 +1262,8 @@ def save_result(chain: str, wallet: str, r: dict, sig: dict, why: str = "", skip
             if ca9 in osk9 and skip_final(osk9[ca9]):
                 continue
             held9 = "recon" in (ss9 or ()) or ca9 in osk9 or bool((om9.get(ca9) or {}).get("dexAt"))
+            if ran9 is not None and ca9 not in cas9 and (set(ss9 or ()) - {"recon", "ledger"}) - good9:
+                held9 = True
             if held9 and ca9 not in cas9:
                 cas9[ca9] = list(ss9)
                 meta9[ca9] = dict(om9.get(ca9) or {}, **(meta9.get(ca9) or {}))
@@ -1071,8 +1275,23 @@ def save_result(chain: str, wallet: str, r: dict, sig: dict, why: str = "", skip
                 for f9 in ("px", "dexAt"):
                     if o9.get(f9) is not None and f9 not in (meta9.get(ca9) or {}):
                         meta9.setdefault(ca9, {})[f9] = o9[f9]
+        ok9, fail9, calls9 = r.get("ok") or {}, r.get("fail") or {}, r.get("calls") or {}
+        if only9:
+            for ca9 in cas9:
+                if (old.get("cas") or {}).get(ca9):
+                    cas9[ca9] = sorted(set(cas9[ca9] or ()) | set((old.get("cas") or {})[ca9]))
+                if isinstance(om9.get(ca9), dict):
+                    meta9[ca9] = dict(om9[ca9], **(meta9.get(ca9) or {}))
+            ok9 = dict({s9: v9 for s9, v9 in (old.get("ok") or {}).items() if s9 not in ran9}, **ok9)
+            fail9 = dict({s9: v9 for s9, v9 in (old.get("fail") or {}).items() if s9 not in ran9}, **fail9)
+            calls9 = dict({s9: v9 for s9, v9 in (old.get("calls") or {}).items() if s9 not in ran9}, **calls9)
         e = {"at": int(time.time()), "why": why, "sig": dict(sig or {}), "cas": cas9, "meta": meta9,
-             "ok": r.get("ok") or {}, "fail": r.get("fail") or {}, "calls": r.get("calls") or {}, "n": len(r.get("cas") or {})}
+             "ok": ok9, "fail": fail9, "calls": calls9, "n": len(cas9) if only9 else len(r.get("cas") or {})}
+        es9 = dict(old.get("es") or {}) if isinstance(old.get("es"), dict) else {}
+        if isinstance(r.get("es"), dict):
+            es9.update({s9: dict(c9) for s9, c9 in r["es"].items() if isinstance(c9, dict)})
+        if es9:
+            e["es"] = es9
         if skip is not None:
             e["skip"] = skip
         elif old.get("skip"):
@@ -1255,6 +1474,17 @@ def filter_result(bal: dict, prep: dict, ext: dict, dex=None) -> dict:
     return bal
 
 
+def hard_fails(e: dict) -> dict:
+    f = e.get("fail") or {}
+    hard = {s: v for s, v in f.items() if str(v).split(":")[0] not in ("unsupported", "nokey", "more")}
+    cm9 = e.get("meta") if isinstance(e.get("meta"), dict) else {}
+    nq9 = sum(1 for ca9, ss9 in (e.get("cas") if isinstance(e.get("cas"), dict) else {}).items()
+              if not ((cm9.get(ca9) or {}).get("rbscam") and set(ss9 or ()) <= {"rabby"}))
+    if nq9 > MAX_QUERY and "query" not in hard:
+        hard["query"] = f"cap: 질문 상한 {MAX_QUERY:,} — {nq9 - MAX_QUERY:,}개"
+    return hard
+
+
 def summary(cfg: dict = None, state: dict = None, env: dict = None) -> dict:
     st = load_state() if state is None else state
     pairs = st.get("pairs") or {}
@@ -1263,14 +1493,21 @@ def summary(cfg: dict = None, state: dict = None, env: dict = None) -> dict:
                 for w in cfg.get("wallets") or [] if w.get("type", "evm") in ("evm", "bsc_rpc") and w.get("address")}
         pairs = {k: e for k, e in pairs.items() if k in act9}
     fb, fp, sk, done = {}, 0, 0, 0
-    hold = 0
+    hold = prog = 0
+    env9 = _env() if env is None else env
     for k, e in pairs.items():
         if not isinstance(e, dict):
             continue
-        if e.get("at"):
+        esd9 = e.get("es") if isinstance(e.get("es"), dict) else {}
+        ch9 = str(k).split(":", 1)[0]
+        inc9 = bool(e.get("at")) and any(_es_usable(ch9, s9, env9) and (
+            (_es_cur(esd9.get(s9)) is None and (s9 in (e.get("ok") or {}) or str((e.get("fail") or {}).get(s9, "")).startswith("partial")))
+            or (_es_cur(esd9.get(s9)) is not None and not esd9[s9].get("done") and str((e.get("fail") or {}).get(s9, "")).startswith("more")))
+            for s9 in ES_LIKE)
+        if e.get("at") and not inc9:
             done += 1
-        f = e.get("fail") or {}
-        hard = {s: v for s, v in f.items() if str(v).split(":")[0] not in ("unsupported", "nokey")}
+        prog += 1 if inc9 else 0
+        hard = hard_fails(e)
         if hard:
             fp += 1
             for s, v in hard.items():
@@ -1290,4 +1527,5 @@ def summary(cfg: dict = None, state: dict = None, env: dict = None) -> dict:
         chains[c] = old_status(c, cfg, env)
         if chains[c] in ("none", "nokey"):
             noold.append(c)
-    return {"pairs": len(pairs), "done": done, "failPairs": fp, "failBy": fb, "skip": sk, "hold": hold, "chains": chains, "noOld": sorted(noold)}
+    return {"pairs": len(pairs), "done": done, "failPairs": fp, "failBy": fb, "skip": sk, "hold": hold, "chains": chains, "noOld": sorted(noold),
+            "progress": prog}

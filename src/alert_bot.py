@@ -721,7 +721,10 @@ def _md_ko(iso: str) -> str:
 def _open_problems(hst, stall_on=False) -> list:
     out = []
     try:
+        ad9 = health.ack_doc() if any(isinstance(i, dict) and i.get("ack") for i in ((hst or {}).get("incidents") or {}).values()) else None
         for i in ((hst or {}).get("incidents") or {}).values():
+            if health.inc_acked(i, ad9):
+                continue
             if not isinstance(i, dict) or i.get("resolved") or str(i.get("id") or "").startswith(("quota:", "bfstall:", "gaps:", "key:")):
                 continue
             if not stall_on and health.alert_cat(i) == "stall":

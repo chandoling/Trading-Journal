@@ -13,6 +13,7 @@ import unicodedata
 import zlib
 from datetime import datetime, timedelta, timezone
 
+import chain_registry
 import common
 
 log = logging.getLogger("tj-web")
@@ -24,6 +25,7 @@ ROWV = 3
 TX_AGG_V = 4
 KINDS = ("coin", "event", "tx", "outflow", "memo", "review", "wallet", "deposit", "nft", "other")
 Q_MAX = 200
+WALLET_VAL_MAX = 128
 LIMIT_DEF, LIMIT_MAX = 20, 50
 QUERY_BUDGET_S = 2.0
 ITEM_GRACE_S = 1.0
@@ -780,6 +782,15 @@ def docs_state(fields: dict, chain_names):
                               "title": (str(w.get("alias") or "") + " " + _short(a)).strip(), "sub": str(w.get("chains") or ""),
                               "body": "지갑 " + str(w.get("alias") or ""), "addr": a, "anc": None,
                               "cks": nm9.chains_in(str(w.get("chains") or "")) or (["sol"] if not a.lower().startswith("0x") else [])})
+    for w in fields.get("chainWalletRows") or ():
+        if not isinstance(w, dict) or not w.get("addr") or not w.get("chain"):
+            continue
+        a = str(w["addr"])
+        c9 = str(w["chain"]).lower()
+        al9 = str(w.get("alias") or "")
+        out["wallet"].append({"kind": "wallet", "key": "w:%s:%s:%s" % (c9, str(w.get("network") or "mainnet"), _addr_norm(a)), "grp": "st:wallet",
+                              "title": (al9 + " " + _short(str(w.get("disp") or "") or a)).strip(), "sub": str(w.get("chains") or ""),
+                              "body": "지갑 " + al9, "addr": a, "anc": None, "chain": c9, "cks": [c9]})
     for d in fields.get("depositRows") or ():
         if not isinstance(d, dict) or not d.get("addr"):
             continue
@@ -969,6 +980,8 @@ def ledger_tx_docs(conn, chain_names, only=None):
             spam = bool(ids9) and all(int(x) in lure for x in ids9 if x.isdigit())
         chn = cn.get(ns, ns)
         hsh = sid.split(":", 1)[0] if ":" in sid and not sid.startswith("0x") else sid
+        if ns == "ton" and sid.count(".") == 2:
+            hsh = sid.rsplit(".", 1)[1]
         iso = _iso(ts)
         ck9 = nm9.chain(ns) or str(ns or "").lower()
         yield ({"kind": "tx", "key": f"tx:{ns}:{sid}", "grp": "tx:" + str(ns), "title": "tx " + _short(hsh),
@@ -1499,7 +1512,10 @@ def parse_query(q: str, today: datetime = None, held=None, names=None):
                 ign.append({"t": t[:60], "why": "has: 는 memo 만 알아요"})
                 continue
         elif key == "wallet":
-            v = (nfkc(val) or "").strip()[:60] or None
+            v = (nfkc(val) or "").strip() or None
+            if v is not None and len(v) > WALLET_VAL_MAX:
+                ign.append({"t": t[:60], "why": f"지갑 값이 너무 길어요({WALLET_VAL_MAX}자 넘음)"})
+                continue
         elif key in ("after", "before", "on"):
             r = _date_range(val, today)
             if not r:
@@ -1543,6 +1559,11 @@ def parse_query(q: str, today: datetime = None, held=None, names=None):
         if _HEX64.fullmatch(tl):
             out["exact"].append(("tx", "0x" + tl.lower()))
             out["detect"] = "tx"
+            continue
+        kp9 = chain_registry.key_parse(tl) if len(tl) in (34, 48) or ":" in tl else None
+        if kp9 and kp9[0] in ("tron", "ton") and kp9[1] != tl:
+            out["exact"].append(("nxaddr", tl))
+            out["detect"] = "addr"
             continue
         m = _SHORT_HEX.fullmatch(tl)
         if m and (m.group(1) or len(m.group(2)) + len(m.group(3)) >= 8) and not (m.group(2) + m.group(3)).isalpha():
@@ -1804,7 +1825,13 @@ def _kind_query(p, kind, fts_on, ctx):
             where.append(c9)
             args += a9
     for kd, v in p["exact"]:
-        c9, a9 = _idq([("addr_l = ?", [v]), ("tx_l = ?", [v])], [("t = ?", ["w:" + v])] if wtg else ())
+        bare9 = [("tx_l = ?", [v[2:]])] if kd == "tx" and _EVM_TX.fullmatch(v) else []
+        wk9 = []
+        if kd == "nxaddr":
+            k9 = (chain_registry.key_parse(v) or (None, None))[1]
+            if k9:
+                bare9, wk9 = [("addr_l = ?", [k9])], [("t = ?", ["w:" + k9])]
+        c9, a9 = _idq([("addr_l = ?", [v]), ("tx_l = ?", [v])] + bare9, ([("t = ?", ["w:" + v])] + wk9) if wtg else ())
         where.append(c9)
         args += a9
     for h in p["hexp"]:
@@ -1928,8 +1955,16 @@ def _wallet_addrs(c, val):
         al = str(body or "")
         al = al[3:] if al.startswith("지갑 ") else al
         rows.append((_addr_norm(addr), al.strip().casefold()))
+    nk9 = None
+    kp9 = chain_registry.key_parse(v) if v else None
+    if kp9:
+        try:
+            nk9 = _addr_norm(chain_registry.owner_key(kp9[0], v))
+        except ValueError:
+            nk9 = _addr_norm(kp9[1])
     for test in (lambda a, al: al == vl, lambda a, al: al.startswith(vl), lambda a, al: vl in al,
-                 lambda a, al: len(v) >= 4 and (a.startswith(v.lower()) if v.lower().startswith("0x") else a.startswith(v))):
+                 lambda a, al: len(v) >= 4 and (a.startswith(v.lower()) if v.lower().startswith("0x") else a.startswith(v)),
+                 lambda a, al: nk9 is not None and a == nk9):
         hit = list(dict.fromkeys(a for a, al in rows if a and al is not None and test(a, al)))
         if hit:
             return hit

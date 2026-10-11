@@ -8,7 +8,7 @@
   const bfInfo = () => { try { const f = window.TJ && window.TJ.bfInfo; return typeof f === 'function' ? f() : null; } catch (e) { return null; } };
   const bfRing = b => { const r = 5.5, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, b.pct)) / 100;
     return '<svg class="tjh-ring' + (b.stalled ? ' st' : '') + '" viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="' + r + '" fill="none" stroke-width="2" class="bg"/><circle cx="7" cy="7" r="' + r + '" fill="none" stroke-width="2" class="fg" stroke-dasharray="' + (c * Math.max(p, 0.04)).toFixed(2) + ' ' + c.toFixed(2) + '" transform="rotate(-90 7 7)"/></svg>'; };
-  const isKnown = x => !!(x && x.known && x.level !== 'crit');
+  const isKnown = x => !!(x && (x.known || x.acked) && x.level !== 'crit');
   const openNew = () => ((H.data && H.data.open) || []).filter(x => !isKnown(x));
   const openKnown = () => ((H.data && H.data.open) || []).filter(isKnown);
   const actTxt = t => String(t == null ? '' : t)
@@ -35,6 +35,7 @@
 .tjh-row.kn>i{background:var(--faint)} .tjh-row.kn .r1 b{color:var(--text2);font-weight:650}
 .tjh-tgn{display:flex;align-items:center;gap:8px;padding:6px 10px 2px;font-size:12.5px;color:var(--muted)} .tjh-tgn button{color:var(--accent);font-weight:700;font-size:12.5px;white-space:nowrap;margin-left:auto}
 .tjh-inc.kn{border-left-color:var(--line2)}
+.tjh-acks{display:flex;align-items:center;flex-wrap:wrap;gap:4px 14px;margin-top:4px;font-size:12.5px} .tjh-acks .cap{color:var(--muted);flex-basis:100%} .tjh-acks .link{font-size:12.5px;font-weight:700;color:var(--accent);min-height:24px} .tjh-acks .link[disabled]{opacity:.5}   /* health18: 닫기 · 되살리기 · 바로가기(기존 링크 꼴) */
 .tjh-sep{display:inline-block;width:1px;height:14px;background:var(--line2);font-size:0;color:transparent;overflow:hidden;flex:none}
 .tjh-pop{position:fixed;z-index:72;width:470px;max-width:calc(100vw - 24px);box-sizing:border-box;background:var(--surface);border:1px solid var(--line2);border-radius:14px;box-shadow:var(--pop);padding:12px 8px 8px;display:flex;flex-direction:column;animation:tjhin .16s cubic-bezier(.2,.8,.2,1)}
 @keyframes tjhin{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
@@ -197,7 +198,7 @@ html.tjh-lock,html.tjh-lock body{overflow:hidden} .tjh-panel{overscroll-behavior
   }
   const isLocked = () => !!(H.locked || (window.TJ && typeof window.TJ.isLocked === 'function' && window.TJ.isLocked()));
   function lock() {
-    H.locked = true; H.data = null; H.err = null; H.at = 0; H.pop = false; H.open = false; H.knownOpen = false; H.showAllResolved = false;
+    H.locked = true; H.data = null; H.err = null; H.at = 0; H.pop = false; H.open = false; H.knownOpen = false; H.showAllResolved = false; H.ackBusy = false;
     OPS.d = null; OPS.err = null; OPS.ask = ''; OPS.askBody = ''; OPS.det.clear();
     const ov = document.getElementById('tjhOverlay'); if (ov) ov.remove();
     document.documentElement.classList.remove('tjh-lock');
@@ -253,11 +254,11 @@ html.tjh-lock,html.tjh-lock body{overflow:hidden} .tjh-panel{overscroll-behavior
     const col = k => 'var(--' + ({ crit: 'danger', warn: 'warn', ext: 'ext' }[partTone(k)]) + ')';
     const dotC = n ? o : 'off';
     const shortH = () => { const part = (k, v) => '<span style="color:' + col(k) + '">' + v + '</span>';
-      return '<span class="tjh-dot ' + dotC + '"></span><span class="tjh-n">' + [c.crit ? part('crit', c.crit) : '', c.warn ? part('warn', c.warn) : '', c.known ? '<span style="color:var(--muted)" title="알려진 사항">' + c.known + '</span>' : ''].filter(Boolean).join('<span style="color:var(--muted);margin:0 2px">·</span>') + '</span>'; };
+      return '<span class="tjh-dot ' + dotC + '"></span><span class="tjh-n">' + [c.crit ? part('crit', c.crit) : '', c.warn ? part('warn', c.warn) : '', c.known ? '<span style="color:var(--muted)" title="닫은 주의">' + c.known + '</span>' : ''].filter(Boolean).join('<span style="color:var(--muted);margin:0 2px">·</span>') + '</span>'; };
     if (mobile && o !== 'unknown' && (n || c.known)) return shortH();
     if (o !== 'unknown' && (n || c.known)) {
       const part = (k, v) => '<span class="tjh-part ' + partTone(k) + '"><i></i><span class="tjh-n">' + LBL[k] + ' ' + v + '</span></span>';
-      return '<span class="tjh-long">' + [c.crit ? part('crit', c.crit) : '', c.warn ? part('warn', c.warn) : '', c.known ? '<span class="tjh-part known"><i></i><span class="tjh-n">알려진 사항 ' + c.known + '</span></span>' : ''].filter(Boolean).join('<span class="tjh-sep" aria-hidden="true"> · </span>') + '</span><span class="tjh-short" aria-hidden="true">' + shortH() + '</span>';
+      return '<span class="tjh-long">' + [c.crit ? part('crit', c.crit) : '', c.warn ? part('warn', c.warn) : '', c.known ? '<span class="tjh-part known"><i></i><span class="tjh-n">닫은 주의 ' + c.known + '</span></span>' : ''].filter(Boolean).join('<span class="tjh-sep" aria-hidden="true"> · </span>') + '</span><span class="tjh-short" aria-hidden="true">' + shortH() + '</span>';
     }
     const label = o === 'unknown' ? (mobile ? '' : H.err && !H.data ? LBL.unknown : '감시 꺼짐') : (mobile ? '' : '정상');
     return '<span class="tjh-dot ' + o + '"></span>' + (label ? '<span class="tjh-n">' + esc(label) + '</span>' : '');
@@ -266,7 +267,7 @@ html.tjh-lock,html.tjh-lock body{overflow:hidden} .tjh-panel{overscroll-behavior
     const o = overall(), c = counts();
     const ex = lv => partTone(lv) === 'ext' ? '(외부 원인)' : '';
     const b9 = bfInfo();
-    return '시스템 상태: ' + (c.crit + c.warn ? LBL[o] : c.known ? '새 문제 없음' : LBL[o]) + (c.crit ? ' · 오류 ' + c.crit + '건' + ex('crit') : '') + (c.warn ? ' · 주의 ' + c.warn + '건' + ex('warn') : '') + (c.known ? ' · 알려진 사항 ' + c.known + '건(오래 지속 · 판정은 그대로)' : '')
+    return '시스템 상태: ' + (c.crit + c.warn ? LBL[o] : c.known ? '새 문제 없음' : LBL[o]) + (c.crit ? ' · 오류 ' + c.crit + '건' + ex('crit') : '') + (c.warn ? ' · 주의 ' + c.warn + '건' + ex('warn') : '') + (c.known ? ' · 닫은 주의 ' + c.known + '건(같은 내용이면 안 띄움 · 판정은 그대로)' : '')
       + (b9 ? ' · 과거 거래 불러오는 중 ' + b9.pct + '%' + (b9.stalled ? '(멈춤)' : '') : '');
   }
   function popHTML() {
@@ -285,10 +286,10 @@ html.tjh-lock,html.tjh-lock body{overflow:hidden} .tjh-panel{overscroll-behavior
       const tag = e ? '<span class="ext">외부' + (e.src ? ' · ' + esc(e.src) : '') + '</span>' : own ? '<span class="own">내 계정</span>' : '<span>' + esc(UNIT_KO[x.unit] || x.unit || '') + '</span>';
       const sep = i > 0 && prevExt && !e; prevExt = !!e;
       return '<div class="tjh-row ' + lv + (e ? ' ext' : '') + (lv === 'crit' ? ' hi' : '') + (sep ? ' sep' : '') + '"><i></i><div class="rb"><div class="r1"><b>' + LBL[lv] + ' · ' + esc(money(x.title)) + '</b>' + tag + '</div>'
-        + '<span class="r2" title="' + esc(money(x.detail)) + '">' + esc(money(x.detail)) + '</span></div></div>';
+        + '<span class="r2" title="' + esc(money(x.detail)) + '">' + esc(money(x.detail)) + '</span>' + ackBtns(x, false) + '</div></div>';
     }).join('');
-    const knH = kn.length ? '<button class="tjh-kn" data-h="known" aria-expanded="' + H.knownOpen + '"><span class="pvx">알려진 사항 ' + kn.length + '</span><span class="sp"></span><span>' + (H.knownOpen ? '접기' : '오래 지속 · 판정은 그대로 ›') + '</span></button>'
-      + (H.knownOpen ? kn.map(x => '<div class="tjh-row kn"><i></i><div class="rb"><div class="r1"><b>' + esc(money(x.title)) + '</b><span>' + esc(x.known) + '</span></div><span class="r2" title="' + esc(money(x.detail)) + '">' + esc(money(x.detail)) + '</span></div></div>').join('') : '') : '';
+    const knH = kn.length ? '<button class="tjh-kn" data-h="known" aria-expanded="' + H.knownOpen + '"><span class="pvx">닫은 주의 ' + kn.length + '</span><span class="sp"></span><span>' + (H.knownOpen ? '접기' : '같은 내용이면 안 띄움 ›') + '</span></button>'
+      + (H.knownOpen ? kn.map(x => '<div class="tjh-row kn"><i></i><div class="rb"><div class="r1"><b>' + esc(money(x.title)) + '</b><span>' + esc(knTxt(x)) + '</span></div><span class="r2" title="' + esc(money(x.detail)) + '">' + esc(money(x.detail)) + '</span>' + ackBtns(x, true) + '</div></div>').join('') : '') : '';
     const b9 = bfInfo();
     const bfH = b9 ? '<button class="tjh-bfl" data-h="full" title="과거 거래 불러오기 — 작업별 진행은 전체 상태에서">' + bfRing(b9) + '<span>과거 거래 불러오는 중 <b class="pvx">' + b9.pct + '%' + (b9.stalled ? ' · 멈춤' : '') + '</b></span><span class="sp"></span><span class="pvx">' + (b9.n ? '작업 ' + b9.n + '개 ›' : '자세히 ›') + '</span></button>' : '';
     return head + bfH + (rows || okOrUnk(false, kn.length)) + knH + tgNote() + popFoot();
@@ -314,13 +315,39 @@ html.tjh-lock,html.tjh-lock body{overflow:hidden} .tjh-panel{overscroll-behavior
     const tgOn = !!(H.data && H.data.telegram && H.data.telegram.configured);
     const tg = x.telegram === false ? '대시보드 표시만' : x.notified ? '텔레그램 알림 보냄' : (lv === 'crit' && tgOn ? '텔레그램 대기' : '대시보드 표시만');
     const e = extOf(x), own = /^debt:/.test(String(x.check || ''));
-    const badge = known ? '<span class="tjh-pill g">' + esc(x.known || '알려진 사항') + '</span>' : e ? '<span class="tjh-pill ext">외부' + (e.src ? ' · ' + esc(e.src) : '') + '</span>' : own ? '<span class="tjh-pill own">내 계정</span>' : '<span class="tjh-pill g" title="' + esc(x.unit) + '">' + esc(UNIT_KO[x.unit] || x.unit || '') + '</span>';
+    const badge = known ? '<span class="tjh-pill g">' + esc(knTxt(x)) + '</span>' : e ? '<span class="tjh-pill ext">외부' + (e.src ? ' · ' + esc(e.src) : '') + '</span>' : own ? '<span class="tjh-pill own">내 계정</span>' : '<span class="tjh-pill g" title="' + esc(x.unit) + '">' + esc(UNIT_KO[x.unit] || x.unit || '') + '</span>';
     const chev = '<svg class="tjh-cv" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
     return '<div class="tjh-inc ' + lv + (known ? ' kn' : '') + (open ? ' open' : '') + '"><button class="tjh-ih" data-h="inc" data-v="' + esc(id) + '" aria-expanded="' + open + '"><i class="tjh-lv"></i><b>' + (known ? '' : LBL[lv] + ' · ') + esc(money(x.title)) + '</b><span class="sp"></span>' + badge + chev + '</button>'
       + (open ? '<div class="tjh-ib"><div class="d">' + esc(money(x.detail)) + '</div>'
         + '<div class="m"><span>' + esc(x.unit) + '</span><span>시작 ' + esc(hm(since)) + ' · ' + esc(ago(nowS() - since)) + '째</span><span>' + esc(tg) + '</span></div>'
         + (compact ? '' : (x.action ? '<div class="act" title="' + esc(x.action) + '"><b>조치</b> · ' + esc(actTxt(x.action)) + '</div>' : ''))
-        + (compact ? '' : opsLinkHTML(x)) + '</div>' : '') + '</div>';
+        + (compact ? '' : opsLinkHTML(x)) + (compact ? '' : ackBtns(x, !!known, true)) + '</div>' : '') + '</div>';
+  }
+  const knTxt = x => x && x.acked ? '닫음' + (x.acked.at ? ' ' + hm(x.acked.at) : '') : (x && x.known) || '닫은 주의';
+  const ACK_GOTO = { 'chainsweep:untracked': { label: '지갑 추가 ›', hash: 'settings/wallets' } };
+  function ackBtns(x, known, card) {
+    if (!x || x.level === 'crit') return '';
+    const c9 = String(x.check || ''), g = ACK_GOTO[c9], busy = H.ackBusy ? ' disabled' : '';
+    const st = card ? ' style="margin-top:8px"' : '';
+    if (known && x.acked) return '<div class="tjh-acks"' + st + '><button class="link" data-h="ackUndo" data-v="' + esc(c9) + '"' + busy + '>되살리기</button></div>';
+    if (known || !(x.ack && x.ack.fp)) return '';
+    return '<div class="tjh-acks"' + st + '>' + (x.ackChanged ? '<span class="cap">닫은 뒤 내용이 바뀌어 다시 보여요</span>' : '')
+      + '<button class="link" data-h="ack" data-v="' + esc(c9) + '" data-fp="' + esc(x.ack.fp) + '" title="같은 내용이면 화면·텔레그램에 다시 안 띄워요 — 새 코인·지갑이 생기거나 금액이 크게 늘면 다시 보여요"' + busy + '>닫기</button>'
+      + (g ? '<button class="link" data-h="ackGoto" data-v="' + esc(g.hash) + '">' + esc(g.label) + '</button>' : '') + '</div>';
+  }
+  function ackIdleHTML() {
+    const ai = ((H.data && H.data.acks) || []).filter(a => a && !a.open);
+    return ai.map(a => '<div class="tjh-res"><span class="tjh-dot sm off"></span><span><b>' + esc(money(a.title)) + '</b> <span class="cap">지금은 해당 없음 · 닫음 ' + esc(hm(a.at)) + '</span></span>'
+      + '<span class="w"><button class="link" data-h="ackUndo" data-v="' + esc(a.check) + '"' + (H.ackBusy ? ' disabled' : '') + '>되살리기</button></span></div>').join('');
+  }
+  async function ackSend(path, body) {
+    const e = ext();
+    if (!e || typeof e.post !== 'function' || H.ackBusy || isLocked()) return;
+    H.ackBusy = true; paint();
+    try {
+      const d = await e.post(path, body, x => (x && x.msg) || '완료');
+      if (d && d.health && !isLocked()) { H.data = d.health; H.at = Date.now(); }
+    } finally { H.ackBusy = false; if (!isLocked()) { paint(); load(); } }
   }
   const OPS_LINK = { 'ledger:poison': 'poison', 'rebuild:pnl': 'pnl', 'ledger:decimals': 'dec' };
   const KEY_LINK = { 'key:etherscan': 'etherscan', 'key:alchemy': 'alchemy', 'key:ankr': 'ankr', 'key:helius': 'helius' };
@@ -340,7 +367,7 @@ html.tjh-lock,html.tjh-lock body{overflow:hidden} .tjh-panel{overscroll-behavior
     if (!us.length) return '<div class="tjh-bnr g">유닛 정보 없음</div>';
     const pvc = t => /[$₩]/.test(String(t || '')) ? '' : ' class="pvx"';
     const srcLv = s0 => s0.level === 'crit' ? 'crit' : s0.level === 'warn' ? 'warn' : s0.level == null ? 'off' : '';
-    const othLv = o => o.level === 'off' || o.level == null ? 'off' : o.level === 'ok' ? '' : LVW(o.level, 'off');
+    const othLv = o => o.level === 'off' || o.level == null || o.acked ? 'off' : o.level === 'ok' ? '' : LVW(o.level, 'off');
     const bad = u => { const lvl = u.ignored ? 'off' : LVW(u.level || 'ok', 'off'); return (lvl !== 'ok' && lvl !== 'off') || (u.sources || []).some(x => srcLv(x) === 'crit' || srcLv(x) === 'warn') || (u.other || []).some(o => othLv(o) === 'crit' || othLv(o) === 'warn'); };
     const row = (u, all) => {
       const p = u.proc;
@@ -393,8 +420,10 @@ html.tjh-lock,html.tjh-lock body{overflow:hidden} .tjh-panel{overscroll-behavior
     const crit = op.filter(x => x.level === 'crit'), warn = op.filter(x => x.level !== 'crit');
     h += '<div class="tjh-sec"><div class="tt">열린 문제 <span class="n pvx">' + op.length + '</span>' + (op.length ? '<span class="n">· 누르면 설명·조치</span>' : '') + '</div>'
       + (op.length ? crit.concat(warn).map(x => incHTML(x, false)).join('') : okOrUnk(true, kn.length)) + '</div>';
-    if (kn.length) h += '<div class="tjh-sec"><button class="tt tjh-kn" style="padding:0;margin-bottom:10px" data-h="known" aria-expanded="' + H.knownOpen + '">알려진 사항 <span class="n pvx">' + kn.length + ' · 오래 지속 · 판정은 그대로</span><span class="sp"></span><span class="n pvx">' + (H.knownOpen ? '접기' : '펼치기') + '</span></button>'
-      + (H.knownOpen ? kn.map(x => incHTML(x, false, true)).join('') : '') + '</div>';
+    const ai9 = ackIdleHTML();
+    if (d.ackErr) h += '<div class="tjh-bnr g">' + esc(d.ackErr) + '</div>';
+    if (kn.length || ai9) h += '<div class="tjh-sec"><button class="tt tjh-kn" style="padding:0;margin-bottom:10px" data-h="known" aria-expanded="' + H.knownOpen + '">닫은 주의 <span class="n pvx">' + (kn.length || '') + (kn.length ? ' · ' : '') + '같은 내용이면 안 띄움 · 판정은 그대로</span><span class="sp"></span><span class="n pvx">' + (H.knownOpen ? '접기' : '펼치기') + '</span></button>'
+      + (H.knownOpen ? kn.map(x => incHTML(x, false, true)).join('') + ai9 : '') + '</div>';
     const b9 = bfInfo();
     if (b9) h += '<div class="tjh-sec tjh-bf"><div class="tt">' + bfRing(b9) + '과거 거래 불러오기 <span class="n pvx">' + b9.pct + '%' + (b9.stalled ? ' · 멈춤' : '') + '</span></div>' + b9.html + '</div>';
     const wt = (d.watching || []).filter(x => !x.suppressed);
@@ -559,7 +588,7 @@ html.tjh-lock,html.tjh-lock body{overflow:hidden} .tjh-panel{overscroll-behavior
   }
   function summary() {
     const c = counts(), o = overall();
-    return { loaded: !!H.data, err: H.err || '', overall: o, crit: c.crit, warn: c.warn, known: c.known, label: c.crit + c.warn ? splitLabel(c) : c.known ? '알려진 사항 ' + c.known : LBL[o],
+    return { loaded: !!H.data, err: H.err || '', overall: o, crit: c.crit, warn: c.warn, known: c.known, label: c.crit + c.warn ? splitLabel(c) : c.known ? '닫은 주의 ' + c.known : LBL[o],
       ext: (c.crit + c.warn) > 0 && openNew().every(x => extOf(x)), tg: !!(H.data && H.data.telegram && H.data.telegram.configured),
       ledger: H.data && H.data.ledgerWait && typeof H.data.ledgerWait === 'object' ? H.data.ledgerWait : null, monitorOff: !!(H.data && H.data.monitorOff),
       version: H.ver || '', dataRev: H.drev };
@@ -663,6 +692,9 @@ html.tjh-lock,html.tjh-lock body{overflow:hidden} .tjh-panel{overscroll-behavior
     else if (a === 'refresh') { load(); loadOps(); }
     else if (a === 'moreRes') { H.showAllResolved = true; paint(); }
     else if (a === 'known') { ev.preventDefault(); H.knownOpen = !H.knownOpen; paint(); }
+    else if (a === 'ack') { ev.preventDefault(); ackSend('/api/health/ack', { check: el.getAttribute('data-v') || '', fp: el.getAttribute('data-fp') || '' }); }
+    else if (a === 'ackUndo') { ev.preventDefault(); ackSend('/api/health/restore', { check: el.getAttribute('data-v') || '' }); }
+    else if (a === 'ackGoto') { ev.preventDefault(); H.pop = false; H.open = false; paint(); try { location.hash = el.getAttribute('data-v') || 'settings/wallets'; } catch (e) {  } }
     else if (a === 'inc') { ev.preventDefault(); const v = el.getAttribute('data-v') || ''; if (H.incOpen.has(v)) H.incOpen.delete(v); else H.incOpen.add(v); paint(); refocus('[data-h="inc"]', v); }
     else if (a === 'units') { ev.preventDefault(); H.unitsAll = !H.unitsAll; paint(); refocus('[data-h="units"]', null); }
     else if (a === 'opsDet' || a === 'opsAsk' || a === 'opsNo' || a === 'opsGo') { ev.preventDefault(); opsClick(a, el.getAttribute('data-v') || ''); }

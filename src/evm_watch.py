@@ -1238,6 +1238,12 @@ class RpcSynthMixin:
                 mint = str(m)
         return fee, typ, mint
 
+    @staticmethod
+    def _ord_li(leg: dict, lg: dict) -> None:
+        li9 = bf_engine.ord_index(lg.get("logIndex"))
+        if li9 is not None:
+            leg["log_index"] = li9
+
     def _wrap_legs(self, logs: list, tts: list, myset: set) -> list:
         wr = str(getattr(self, "wrapped_ca", None) or "").lower()
         if not wr:
@@ -1272,6 +1278,7 @@ class RpcSynthMixin:
             out.append({"from": fr, "to": to,
                         "token": {"address": wr, "symbol": None, "type": "ERC-20", "decimals": self._rpc_token_dec(wr)},
                         "total": {"value": str(v)}})
+            self._ord_li(out[-1], lg)
         return out
 
     SELL_HINTS = False
@@ -1344,6 +1351,7 @@ class RpcSynthMixin:
                     tts.append({"from": fr7, "to": to7, "token": {"address": (lg.get("address") or "").lower(), "symbol": None,
                                                                    "type": "ERC-721", "decimals": None},
                                 "total": {"token_id": str(tid7), "decimals": None, "value": None}})
+                    self._ord_li(tts[-1], lg)
                 continue
             if len(tps) != 3 or (tps[0] or "").lower() != self.TRANSFER_TOPIC:
                 continue
@@ -1395,6 +1403,7 @@ class RpcSynthMixin:
                         "token": {"address": ca, "symbol": None, "type": "ERC-20",
                                   "decimals": dec9},
                         "total": {"value": str(v)}})
+            self._ord_li(tts[-1], lg)
         tts.extend(self._wrap_legs(rc.get("logs") or [], tts, myset))
         if getattr(self, "SELL_HINTS", False) and not emitter and not msrc:
             hint9 = self._sell_wd_hint(tx, rc, tts, myset)
@@ -1431,6 +1440,9 @@ class RpcSynthMixin:
                    "raw_input": tx.get("input") or "0x",
                    "timestamp": ts9, "block_number": blk,
                    "block_hash": rc.get("blockHash"), "synth": "rpc"}
+        pos9 = bf_engine.tx_position(tx, rc)
+        if pos9 is not None:
+            snap_tx["position"] = pos9
         if typ is not None:
             snap_tx["type"] = typ
         if typ == 126:
@@ -4031,6 +4043,10 @@ class EtherscanWatcher(RpcSynthMixin):
                       "block_hash": src.get("blockHash")}
             except (TypeError, ValueError, KeyError):
                 return None
+        pos9 = {bf_engine.ord_index(r.get("transactionIndex")) for r in ([t] if t else []) + list(ent["tt"] or []) + list(ent["it"] or [])
+                if isinstance(r, dict) and r.get("transactionIndex") not in (None, "")}
+        if len(pos9) == 1 and None not in pos9:
+            tx["position"] = pos9.pop()
         tts = []
         for r in ent["tt"]:
             try:
@@ -4040,6 +4056,7 @@ class EtherscanWatcher(RpcSynthMixin):
                                           "symbol": r.get("tokenSymbol"), "name": r.get("tokenName"),
                                           "type": "ERC-721"},
                                 "total": {"token_id": str(int(r.get("tokenID")))}})
+                    RpcSynthMixin._ord_li(tts[-1], r)
                     continue
                 ca9 = (r.get("contractAddress") or "").lower()
                 v9 = int(r.get("value") or 0)
@@ -4064,6 +4081,7 @@ class EtherscanWatcher(RpcSynthMixin):
                                       "decimals": dec9,
                                       "type": "ERC-20"},
                             "total": {"value": str(v9)}})
+                RpcSynthMixin._ord_li(tts[-1], r)
             except (TypeError, ValueError):
                 return None
         wl9 = EtherscanWatcher._es_wrap_legs(self, t, tx["status"], ent, []) if t else []
@@ -4522,6 +4540,12 @@ class TraceDeferred(bf_engine.NetError):
         super().__init__(msg, "budget")
 
 
+class TraceStaged(RuntimeError):
+
+    def __init__(self):
+        super().__init__("trace 단계 기록: callTracer·parity 모든 노드 실제 실패(지난 차례)")
+
+
 class _TraceBudget:
 
     def __init__(self, w, dl):
@@ -4837,6 +4861,11 @@ class RpcChainWatcher(RpcSynthMixin):
         if self.NATIVE_EMITTER.get(chain) and self.trace_rpcs:
             log.warning("%s: 네이티브 시스템 이벤트 체인 — trace_rpcs 무시", chain)
             self.trace_rpcs = []
+        try:
+            import nodesel
+            nodesel.register(chain, self.cfg_rpcs, self.logs_rpcs, self.state_rpcs, self.trace_rpcs)
+        except Exception:
+            pass
         self.start_block = int(cc.get("start_block") or 0)
         if cc.get("rps"):
             for u9 in dict.fromkeys(self.cfg_rpcs + self.logs_rpcs + self.state_rpcs):
@@ -4911,7 +4940,7 @@ class RpcChainWatcher(RpcSynthMixin):
     def _node_order(self, urls):
         order = self._order(urls)
         if not self.__dict__.get("_key_ctx"):
-            return order
+            return self._sel_order(urls, order)
         try:
             import nodekeys
             key9 = [u for u in order if nodekeys.is_key_node(u) and not bf_engine.gate(u).is_open() and not bf_engine.gate(u).resting()]
@@ -4920,6 +4949,34 @@ class RpcChainWatcher(RpcSynthMixin):
         if not key9 or len(key9) == len(order):
             return order
         return key9 + [u for u in order if u not in key9]
+
+    def _sel_via(self) -> str:
+        try:
+            import nodesel
+            return nodesel.via(self.chain)
+        except Exception:
+            return ""
+
+    def _sel_lane(self, remaining):
+        try:
+            import nodesel
+            it9 = self.progress.items.get(f"{self.chain}:rpc") or {}
+            nodesel.lane_eta(self.chain, it9.get("eta_sec") if remaining else 0, remaining)
+        except Exception:
+            pass
+
+    def _sel_order(self, urls, order):
+        try:
+            import nodesel
+            role9 = "state" if list(urls) == list(self.state_rpcs) and list(urls) != list(self.cfg_rpcs) else "detail"
+            bf9 = bf_engine.burst_on()
+            new9 = nodesel.order(self.chain, role9, urls, base=order, key_first=bf9 and nodesel.bf_key_first(self.chain))
+            if not nodesel.enabled():
+                nodesel.shadow(self.chain, role9, "bf" if bf9 else "rt", order, new9)
+                return order
+            return new9
+        except Exception:
+            return order
 
     def _rpc_call(self, method: str, params: list):
         if self._pref is not None:
@@ -5332,9 +5389,35 @@ class RpcChainWatcher(RpcSynthMixin):
         order9 = self._order(self.trace_rpcs)
         sl9 = self.__dict__.get("_trace_slow_until") or {}
         if not sl9 or len(order9) < 2:
-            return order9
+            return self._sel_trace(order9)
         now = time.time()
-        return [u for u in order9 if float(sl9.get(u) or 0) <= now] + [u for u in order9 if float(sl9.get(u) or 0) > now]
+        return self._sel_trace([u for u in order9 if float(sl9.get(u) or 0) <= now]) + [u for u in order9 if float(sl9.get(u) or 0) > now]
+
+    def _sel_trace(self, order9) -> list:
+        if len(order9) < 2:
+            return order9
+        try:
+            import nodesel
+            if not nodesel.enabled():
+                return order9
+            return nodesel.demote_public(self.chain, "trace", order9)
+        except Exception:
+            return order9
+
+    @staticmethod
+    def _trace_nid(url: str) -> str:
+        return hashlib.sha1(str(url).encode("utf-8")).hexdigest()[:10]
+
+    def _trace_pref(self, order: list, done) -> list:
+        d9 = {str(x) for x in done} if isinstance(done, (list, tuple, set)) else set()
+        if not d9:
+            return order
+        return [u for u in order if self._trace_nid(u) not in d9] + [u for u in order if self._trace_nid(u) in d9]
+
+    def _trace_obs(self, k: str, url: str, e) -> None:
+        o9 = self.__dict__.get("_trace_stage_obs")
+        if isinstance(o9, dict) and isinstance(o9.get(k), set) and not self._trace_untried(e) and getattr(e, "kind", None) not in ("http429", "quota"):
+            o9[k].add(self._trace_nid(url))
 
     def _trace_fail_one(self, url: str, e, kw: dict, cap: float):
         try:
@@ -5372,9 +5455,21 @@ class RpcChainWatcher(RpcSynthMixin):
         errs9 = []
         tr = None
         pf9 = bool(snap.pop("_trace_parity_first", False))
+        an9, ab9 = snap.pop("_alch_n", 0), snap.pop("_alch_blk", None)
+        st9 = snap.pop("_trace_stg", None)
+        st9 = st9 if isinstance(st9, dict) else {}
+        self._trace_stage_obs = {"ct": set(), "pa": set()}
         self._trace_mixed = False
+        if st9.get("alch"):
+            al9 = self._alch_tx(h, snap, [TraceStaged()], an9, ab9)
+            if al9 is not None:
+                snap["internal"] = al9
+                snap["internal_note"] = "trace"
+                snap["internal_src"] = "alchemy_transfers"
+                self._trace_fail.pop(h, None)
+                return
         if pf9:
-            rows9 = self._trace_parity(h, errs9)
+            rows9 = self._trace_parity(h, errs9, done=st9.get("pa"))
             if rows9 is not None:
                 snap["internal"] = rows9
                 snap["internal_note"] = "trace"
@@ -5382,7 +5477,7 @@ class RpcChainWatcher(RpcSynthMixin):
                 self._trace_note(True)
                 return
         slow9 = set()
-        for url in self._trace_nodes(errs9):
+        for url in self._trace_pref(self._trace_nodes(errs9), st9.get("ct")):
             kw9 = self._trace_kw(30)
             if kw9 is None:
                 errs9.append(TraceDeferred())
@@ -5394,21 +5489,33 @@ class RpcChainWatcher(RpcSynthMixin):
                 e = self._trace_fail_one(url, e, kw9, 30)
                 last = e
                 errs9.append(e)
+                self._trace_obs("ct", url, e)
                 if self._trace_slow(e):
                     slow9.add(url)
         if not isinstance(tr, dict) or not tr.get("type"):
             if tr is not None:
                 errs9.append(RuntimeError("trace 응답 형식 오류"))
-            rows9 = None if pf9 else self._trace_parity(h, errs9, skip=slow9 if self._trace_sick() else ())
+                self._trace_obs("ct", url, errs9[-1])
+            rows9 = None if pf9 else self._trace_parity(h, errs9, skip=slow9 if self._trace_sick() else (), done=st9.get("pa"))
             if rows9 is None:
                 e9 = self._trace_err(errs9, last) or RuntimeError("trace 응답 형식 오류")
                 tried9 = tr is not None or any(not self._trace_untried(x) for x in errs9)
                 if not tried9 and errs9:
                     raise TraceDeferred(f"budget: trace 전송 전 보류 — 다음 차례({common.safe_err(e9)[:60]})")
+                try:
+                    al9, ae9 = self._alch_tx(h, snap, errs9, an9, ab9), None
+                except Exception as x9:
+                    al9, ae9 = None, x9
+                if al9 is not None:
+                    snap["internal"] = al9
+                    snap["internal_note"] = "trace"
+                    snap["internal_src"] = "alchemy_transfers"
+                    self._trace_fail.pop(h, None)
+                    return
                 if tried9 and not self._trace_gone(e9):
                     self._trace_note(False)
                 self._trace_mixed = any(self._trace_untried(x) for x in errs9)
-                raise e9
+                raise ae9 if ae9 is not None else e9
             snap["internal"] = rows9
             snap["internal_note"] = "trace"
             self._trace_fail.pop(h, None)
@@ -5439,10 +5546,10 @@ class RpcChainWatcher(RpcSynthMixin):
         self._trace_fail.pop(h, None)
         self._trace_note(True)
 
-    def _trace_parity(self, h: str, errs: list = None, skip=()):
+    def _trace_parity(self, h: str, errs: list = None, skip=(), done=()):
         res = None
         got9 = False
-        for url in self._trace_order():
+        for url in self._trace_pref(self._trace_order(), done):
             if url in skip:
                 continue
             kw9 = self._trace_kw(30)
@@ -5458,10 +5565,13 @@ class RpcChainWatcher(RpcSynthMixin):
                 e = self._trace_fail_one(url, e, kw9, 30)
                 if errs is not None:
                     errs.append(e)
+                self._trace_obs("pa", url, e)
                 continue
         if not isinstance(res, list):
             if got9 and errs is not None:
                 errs.append(RuntimeError("trace_transaction 응답 형식 오류"))
+            if got9:
+                self._trace_obs("pa", url, RuntimeError("trace_transaction 응답 형식 오류"))
             return None
         myset = set(self.wallets)
         try:
@@ -5751,7 +5861,25 @@ class RpcChainWatcher(RpcSynthMixin):
         res = None
         got9 = False
         sent9 = 0
-        for url in self._trace_nodes(errs9):
+        an9 = self.__dict__.pop("_alch_ctx_n", 0)
+        lc9 = self.__dict__.pop("_leaf_ctx_stg", None)
+        rc9 = isinstance(lc9, dict) and bool(lc9.get("alch")) and bool(lc9.get("rc"))
+        if isinstance(lc9, dict) and lc9.get("alch") and not rc9:
+            a9 = int(self.__dict__.get("_alch_sent") or 0)
+            try:
+                fr9 = self._alch_frames(blk, [TraceStaged()], an9)
+            except Exception as x9:
+                if int(self.__dict__.get("_alch_sent") or 0) > a9 and getattr(x9, "kind", None) not in ("budget", "receipt"):
+                    lc9["rc_next"] = True
+                raise
+            if fr9 is not None:
+                return fr9, []
+        nodes9 = self._trace_nodes(errs9)
+        if isinstance(lc9, dict):
+            nodes9 = self._trace_pref(nodes9, lc9.get("tb"))
+            if rc9 and nodes9:
+                nodes9 = [sorted(nodes9, key=self._trace_nid)[int(lc9.get("ri") or 0) % len(nodes9)]]
+        for url in nodes9:
             kw9 = self._trace_kw(60)
             if kw9 is None:
                 errs9.append(TraceDeferred())
@@ -5767,15 +5895,30 @@ class RpcChainWatcher(RpcSynthMixin):
                 errs9.append(e)
                 if not self._trace_untried(e):
                     sent9 += 1
+                    if isinstance(lc9, dict) and getattr(e, "kind", None) not in ("http429", "quota"):
+                        lc9.setdefault("obs", set()).add(self._trace_nid(url))
+        if rc9 and sent9:
+            lc9["rc_used"] = True
         if not isinstance(res, list):
             if got9:
                 errs9.append(RuntimeError("블록 trace 응답 형식 오류"))
+                if isinstance(lc9, dict):
+                    lc9.setdefault("obs", set()).add(self._trace_nid(url))
             if not sent9 and errs9 and all(self._trace_untried(x) for x in errs9):
                 raise TraceDeferred(f"budget: 블록 trace 전송 전 보류 — 다음 차례({common.safe_err(errs9[-1])[:60]})")
             e9 = self._trace_err(errs9, last) or RuntimeError("블록 trace 응답 형식 오류")
+            try:
+                fr9, ae9 = self._alch_frames(blk, errs9, an9), None
+            except Exception as x9:
+                fr9, ae9 = None, x9
+            if fr9 is not None:
+                return fr9, []
+            if rc9 and ae9 is None and self._trace_gone(e9) and len({self._trace_nid(u) for u in self.trace_rpcs}) > 1:
+                lc9["rc_next"] = True
+                e9 = RuntimeError("block trace recheck incomplete; another provider remains unverified")
             if sent9 and not self._trace_gone(e9):
                 self._trace_note(False)
-            raise e9
+            raise ae9 if ae9 is not None else e9
         self._trace_note(True)
         myset = set(self.wallets)
         out, unres, nfb9 = {}, [], 0
@@ -5920,6 +6063,145 @@ class RpcChainWatcher(RpcSynthMixin):
         if tr9:
             return tr9[0]
         return last if last is not None else ((errs or [None])[-1])
+
+    ALCH_MIN_AGE_SEC = 3600
+    ALCH_OLD_DAYS = 30
+    ALCH_LATE_N = 2
+    ALCH_CALL_SEC = 20.0
+    ALCH_MIN_SEC = 8.0
+    ALCH_MEMO_SEC = 900
+    ALCH_MEMO_N = 256
+
+    def _alch_url(self):
+        try:
+            import alch_internal
+            return alch_internal.url_for(self.chain)
+        except Exception:
+            return None
+
+    def _alch_eligible(self, errs, blk, n=0) -> bool:
+        try:
+            blk = int(blk or 0)
+            head = int(getattr(self, "_log_head", 0) or 0)
+            bpd = float(getattr(self, "bpd", 0) or 43200)
+        except (TypeError, ValueError):
+            return False
+        if blk <= 0 or head <= blk or not errs:
+            return False
+        age = (head - blk) * 86400.0 / max(1.0, bpd)
+        if age < self.ALCH_MIN_AGE_SEC:
+            return False
+        for e in errs:
+            if self._trace_untried(e) or getattr(e, "kind", None) in ("http429", "quota"):
+                return False
+        if all(self._trace_gone(e) for e in errs):
+            return True
+        return age >= self.ALCH_OLD_DAYS * 86400 or int(n or 0) >= self.ALCH_LATE_N
+
+    def _alch_kw(self) -> dict:
+        t9 = float(self.ALCH_CALL_SEC)
+        dl = self.__dict__.get("_tdl")
+        if dl is not None:
+            t9 = min(t9, max(float(dl) - time.time(), float(self.ALCH_MIN_SEC)))
+        return {"timeout": t9, "retries": 1, "deadline": bf_engine.time.time() + t9, "sem_timeout": t9}
+
+    def _alch_raw(self, blk: int) -> dict:
+        import alch_internal
+        url = self._alch_url()
+        if not url:
+            raise alch_internal.AlchSkip("키 없음")
+        ws = tuple(sorted(str(w).lower() for w in self.wallets))
+        memo = self.__dict__.get("_alch_memo")
+        if not isinstance(memo, dict) or self.__dict__.get("_alch_memo_ws") != ws:
+            memo = self._alch_memo = {}
+            self._alch_memo_ws = ws
+        now = time.time()
+        m9 = memo.get(int(blk))
+        if m9 and now - m9[0] < self.ALCH_MEMO_SEC:
+            return m9[1]
+        try:
+            trs, info = alch_internal.fetch_range(url, int(blk), int(blk), self._alch_kw())
+        except alch_internal.AlchFail as x9:
+            if x9.kind != "budget":
+                self._alch_sent = int(self.__dict__.get("_alch_sent") or 0) + 1
+            raise
+        self._alch_sent = int(self.__dict__.get("_alch_sent") or 0) + 1
+        rows = alch_internal.rows_for(trs, set(ws))
+        memo[int(blk)] = (now, rows)
+        if len(memo) > self.ALCH_MEMO_N:
+            for k9 in sorted(memo, key=lambda x: memo[x][0])[:len(memo) - self.ALCH_MEMO_N]:
+                memo.pop(k9, None)
+        log.info("%s 블록 %d 내부 이동 — Alchemy 목록 %d건 · 내 지갑 tx %d(쪽 %d%s)", self.chain, int(blk), len(trs), len(rows), info["pages"],
+                 f" · 처음부터 다시 {info['restarts']}" if info.get("restarts") else "")
+        return rows
+
+    def _alch_status(self, hashes) -> dict:
+        import alch_internal
+        hs = list(dict.fromkeys(hashes))
+        if not hs:
+            return {}
+        try:
+            with self._rpc_budget(time.time() + self._alch_kw()["timeout"]):
+                res = self._batch([("eth_getTransactionReceipt", [h]) for h in hs])
+        except Exception as e:
+            if self._trace_untried(e) or "예산 소진" in str(e):
+                raise TraceDeferred("budget: Alchemy 보완 영수증 — 마감(다음 차례)")
+            raise alch_internal.AlchFail("receipt", common.safe_err(e)[:80])
+        out = {}
+        for h, r in zip(hs, res):
+            try:
+                if not isinstance(r, dict) or r.get("status") not in ("0x0", "0x1"):
+                    raise ValueError("영수증 없음·상태 없음")
+                out[h] = (int(r["blockNumber"], 16), r["status"] == "0x1")
+            except (KeyError, TypeError, ValueError) as e:
+                raise alch_internal.AlchFail("receipt", str(e)[:60])
+        return out
+
+    def _alch_tx(self, h: str, snap: dict, errs, n=0, blk_hint=None):
+        tx = snap.get("tx") if isinstance(snap.get("tx"), dict) else {}
+        try:
+            blk = int(tx.get("block_number") or blk_hint or 0)
+        except (TypeError, ValueError):
+            blk = 0
+        if not self._alch_eligible(errs, blk, n) or not self._alch_url():
+            return None
+        import alch_internal
+        if tx.get("status") in ("ok", "error") and tx.get("block_number"):
+            ok9 = tx.get("status") == "ok"
+        else:
+            b9, ok9 = self._alch_status([h])[h]
+            if b9 != blk:
+                if not self._alch_eligible(errs, b9, n):
+                    return None
+                blk = b9
+        try:
+            raw = self._alch_raw(blk)
+        except alch_internal.AlchSkip:
+            return None
+        rows = [dict(r, success=bool(ok9)) for r in raw.get(h) or []]
+        self._note("_native_notes", {"kind": "alch_fill", "tx": h[:14], "blk": blk, "rows": len(rows), "src": alch_internal.SRC})
+        log.info("%s trace 노드가 못 준 tx %s — Alchemy 내부 이동 목록으로 보완(내 지갑 행 %d%s)", self.chain, h[:12], len(rows), "" if ok9 else " · 실패 tx")
+        return rows
+
+    def _alch_frames(self, blk: int, errs, n=0):
+        if not self._alch_eligible(errs, blk, n) or not self._alch_url():
+            return None
+        import alch_internal
+        try:
+            raw = self._alch_raw(int(blk))
+        except alch_internal.AlchSkip:
+            return None
+        out = {}
+        if raw:
+            st = self._alch_status(list(raw))
+            for h, rows in raw.items():
+                b9, ok9 = st[h]
+                if b9 != int(blk):
+                    raise alch_internal.AlchFail("receipt", "블록 불일치")
+                out[h] = [dict(r, success=bool(ok9)) for r in rows]
+        self._note("_native_notes", {"kind": "alch_block", "blk": int(blk), "txs": len(out), "src": alch_internal.SRC})
+        log.info("%s trace 노드가 못 준 블록 %d — Alchemy 내부 이동 목록으로 보완(내 지갑 tx %d)", self.chain, int(blk), len(out))
+        return out
 
     @staticmethod
     def _leaf_rng_key(nk: str, c) -> str:
@@ -6067,6 +6349,55 @@ class RpcChainWatcher(RpcSynthMixin):
     LEAF_LATER_MAX = 500
     LEAF_LATER_PER_CYCLE = 3
 
+    def _leaf_stg_get(self, e) -> dict:
+        s9 = e.get("stg") if isinstance(e, dict) else None
+        out = {"v": 1, "tb": [], "al": 0}
+        if isinstance(s9, dict) and s9.get("v") == 1:
+            if isinstance(s9.get("tb"), list):
+                out["tb"] = [str(x)[:16] for x in s9["tb"] if isinstance(x, str)][:16]
+            out["al"] = max(0, _int_or(s9.get("al"), 0))
+            if s9.get("rc") is True or s9.get("rc") == 1:
+                out["rc"] = 1
+            if _int_or(s9.get("ri"), 0) > 0:
+                out["ri"] = min(_int_or(s9.get("ri"), 0), 10 ** 6)
+        return out
+
+    def _leaf_stg_put(self, e: dict, st9: dict, lc9: dict, sent0: int) -> None:
+        new = {"v": 1, "tb": sorted(set(st9["tb"]) | set(lc9.get("obs") or ()))[:16],
+               "al": st9["al"] + max(0, int(self.__dict__.get("_alch_sent") or 0) - int(sent0))}
+        if lc9.get("rc_next") or (st9.get("rc") and not lc9.get("rc_used")):
+            new["rc"] = 1
+        ri9 = int(st9.get("ri") or 0) + (1 if lc9.get("rc_used") else 0)
+        if ri9:
+            new["ri"] = ri9
+        if "stg" in e or new["tb"] or new["al"]:
+            e["stg"] = new
+
+    def _leaf_later_expire_ok(self, k: str, e: dict, now: int) -> bool:
+        why9 = None
+        if self._leaf_stg_get(e)["al"] > 0:
+            why9 = "expired_after_alchemy"
+        else:
+            ok9 = self.__dict__.get("_ll_alok")
+            if ok9 is None:
+                ok9 = self._ll_alok = bool(self._alch_url())
+            if not ok9:
+                why9 = "expired_no_alchemy"
+            elif now - int(e.get("at") or now) <= self.LEAF_LATER_TTL * self.TRACE_LATER_ALCH_HOLD:
+                return False
+            else:
+                why9 = "alchemy_never_tried"
+        try:
+            common.append_durable_jsonl(os.path.join(common.STATE_DIR, f"leaf_later_unresolved_{self.chain}.jsonl"),
+                                        {"chain": self.chain, "k": k, "w": str(e.get("w") or "").lower(), "blk": _int_or(e.get("blk"), 0),
+                                         "at": _int_or(e.get("at"), 0), "n": _int_or(e.get("n"), 0), "stg": self._leaf_stg_get(e),
+                                         "err": str(e.get("err") or "")[:80], "why": why9, "ts": int(now)})
+        except Exception as x9:
+            log.warning("%s '나중에 다시' 잎 %s 보관 실패 — 큐 유지: %s", self.chain, k, common.safe_err(x9)[:80])
+            return False
+        self._note("_native_notes", {"kind": "leaf_later_archived", "w": str(e.get("w") or "")[:10], "blk": _int_or(e.get("blk"), 0)})
+        return True
+
     def _leaf_later_step(self, head: int) -> int:
         if self.trace_rpcs:
             self._leaf_overflow_refill(int(time.time()))
@@ -6075,8 +6406,10 @@ class RpcChainWatcher(RpcSynthMixin):
             return 0
         now = int(time.time())
         n_emit, done = 0, 0
+        self._ll_alok = None
         gone9 = [k9 for k9, e9 in ll.items() if not isinstance(e9, dict)
-                 or (now - int(e9.get("at") or now) > self.LEAF_LATER_TTL and int(e9.get("n") or 0) >= self.LEAF_LATER_TTL_MIN_N)]
+                 or (now - int(e9.get("at") or now) > self.LEAF_LATER_TTL and int(e9.get("n") or 0) >= self.LEAF_LATER_TTL_MIN_N
+                     and self._leaf_later_expire_ok(k9, e9, now))]
         for k9 in gone9:
             e9 = ll.pop(k9, None)
             e9 = e9 if isinstance(e9, dict) else {}
@@ -6086,7 +6419,7 @@ class RpcChainWatcher(RpcSynthMixin):
         t9 = time.time()
         dl9 = t9 + self.LEAF_LATER_STEP_SEC
         per9 = 1 if self._trace_sick() else self.LEAF_LATER_PER_CYCLE
-        for k in sorted(ll, key=lambda x: ll[x].get("next") or 0):
+        for k in sorted(ll, key=lambda x: max(int(ll[x].get("next") or 0), min(_int_or(ll[x].get("dfr"), 0), now))):
             e = ll.get(k) or {}
             if done >= per9 or int(e.get("next") or 0) > now:
                 break
@@ -6095,7 +6428,13 @@ class RpcChainWatcher(RpcSynthMixin):
             first9 = not done
             done += 1
             w, y = str(e.get("w") or "").lower(), int(e.get("blk") or 0)
+            st9 = self._leaf_stg_get(e)
+            ns9 = {self._trace_nid(u) for u in self.trace_rpcs}
+            lc9 = {"tb": st9["tb"], "alch": bool(ns9) and ns9 <= set(st9["tb"]), "obs": set(), "rc": bool(st9.get("rc")), "ri": int(st9.get("ri") or 0)}
+            sent9 = int(self.__dict__.get("_alch_sent") or 0)
             try:
+                self._alch_ctx_n = int(e.get("n") or 0)
+                self._leaf_ctx_stg = lc9
                 with self._trace_budget(max(dl9, time.time() + self.LEAF_FIRST_SEC) if first9 else dl9):
                     frames, unres9 = self._trace_block(y)
                 cand = [h for h, rows in frames.items() if any((r.get("to") or "").lower() == w and r.get("success") is not False for r in rows)]
@@ -6106,7 +6445,9 @@ class RpcChainWatcher(RpcSynthMixin):
                 if bad:
                     raise RuntimeError(f"상세 실패 {bad[0][:12]}: {common.safe_err(dets.get(bad[0]))[:80]}")
             except Exception as ex:
+                self._leaf_stg_put(e, st9, lc9, sent9)
                 if isinstance(ex, TraceDeferred) or "예산 소진" in str(ex):
+                    e["dfr"] = now
                     break
                 if self._trace_gone(ex):
                     ll.pop(k, None)
@@ -6124,6 +6465,7 @@ class RpcChainWatcher(RpcSynthMixin):
                     self._emit(h, s9, head)
                     n_emit += 1
             if unres9:
+                self._leaf_stg_put(e, st9, lc9, sent9)
                 e["n"] = int(e.get("n") or 0) + 1
                 e["next"] = now + min(7200, self.LEAF_LATER_SEC * (2 ** min(e["n"], 4)))
                 e["err"] = f"블록 trace 항목 {len(unres9)}개 미해결"
@@ -7522,8 +7864,52 @@ class RpcChainWatcher(RpcSynthMixin):
         for h in hs9:
             late9.pop(h, None) if isinstance(late9, dict) else late9.discard(h)
 
+    TRACE_LATER_ALCH_HOLD = 2
+
+    def _trace_stg_get(self, e) -> dict:
+        s9 = e.get("stg") if isinstance(e, dict) else None
+        out = {"v": 1, "ct": [], "pa": [], "al": 0}
+        if isinstance(s9, dict) and s9.get("v") == 1:
+            for k9 in ("ct", "pa"):
+                if isinstance(s9.get(k9), list):
+                    out[k9] = [str(x)[:16] for x in s9[k9] if isinstance(x, str)][:16]
+            out["al"] = max(0, _int_or(s9.get("al"), 0))
+        return out
+
+    def _trace_stg_put(self, e: dict, st9: dict, sent0: int) -> None:
+        o9 = self.__dict__.get("_trace_stage_obs") or {}
+        new = {"v": 1, "ct": sorted(set(st9["ct"]) | set(o9.get("ct") or ()))[:16], "pa": sorted(set(st9["pa"]) | set(o9.get("pa") or ()))[:16],
+               "al": st9["al"] + max(0, int(self.__dict__.get("_alch_sent") or 0) - int(sent0))}
+        if "stg" in e or new["ct"] or new["pa"] or new["al"]:
+            e["stg"] = new
+
+    def _trace_later_expire_ok(self, h: str, e: dict, now: int) -> bool:
+        why9 = None
+        if self._trace_stg_get(e)["al"] > 0:
+            why9 = "expired_after_alchemy"
+        else:
+            ok9 = self.__dict__.get("_tl_alok")
+            if ok9 is None:
+                ok9 = self._tl_alok = bool(self._alch_url())
+            if not ok9:
+                why9 = "expired_no_alchemy"
+            elif now - int(e.get("at") or now) <= self.TRACE_LATER_TTL * self.TRACE_LATER_ALCH_HOLD:
+                return False
+            else:
+                why9 = "alchemy_never_tried"
+        try:
+            common.append_durable_jsonl(os.path.join(common.STATE_DIR, f"trace_later_unresolved_{self.chain}.jsonl"),
+                                        {"chain": self.chain, "h": h, "blk": _int_or(e.get("blk"), 0), "at": _int_or(e.get("at"), 0), "n": _int_or(e.get("n"), 0),
+                                         "stg": self._trace_stg_get(e), "err": str(e.get("err") or "")[:80], "why": why9, "ts": int(now)})
+        except Exception as x9:
+            log.warning("%s 늦은 채움 trace %s 보관 실패 — 큐 유지: %s", self.chain, h[:12], common.safe_err(x9)[:80])
+            return False
+        self._note("_native_notes", {"kind": "trace_later_archived", "tx": h[:14]})
+        return True
+
     def _trace_later_step(self, head: int, per: int = None) -> int:
         self._trace_later_trim()
+        self._tl_alok = None
         if self.trace_rpcs:
             self._trace_overflow_refill()
         tl = self.cursor.get("_trace_later")
@@ -7535,22 +7921,28 @@ class RpcChainWatcher(RpcSynthMixin):
         def nxt(x):
             e9 = tl.get(x)
             return int(e9.get("next") or 0) if isinstance(e9, dict) else 0
+
+        def pick(x):
+            e9 = tl.get(x)
+            return max(nxt(x), min(_int_or(e9.get("dfr"), 0), now)) if isinstance(e9, dict) else 0
         t9 = time.time()
         for h in sorted(tl, key=nxt):
             e = tl.get(h)
-            if isinstance(e, dict) and now - int(e.get("at") or now) > self.TRACE_LATER_TTL and int(e.get("n") or 0) >= self.TRACE_LATER_TTL_MIN_N:
+            if isinstance(e, dict) and now - int(e.get("at") or now) > self.TRACE_LATER_TTL and int(e.get("n") or 0) >= self.TRACE_LATER_TTL_MIN_N \
+                    and self._trace_later_expire_ok(h, e, now):
                 tl.pop(h, None)
                 touched = True
                 self._note("_native_notes", {"kind": "trace_later_giveup", "tx": h[:14], "n": int(e.get("n") or 0)})
                 log.warning("%s 늦은 채움 trace %s — %d일 넘게 못 풂 · 뺌(internal 미확인 · 대사 흡수): %s", self.chain, h[:12],
                             self.TRACE_LATER_TTL // 86400, str(e.get("err") or "")[:80])
-        for h in sorted(tl, key=nxt):
+        for h in sorted(tl, key=pick):
             e = tl.get(h)
             if not isinstance(e, dict):
                 tl.pop(h, None)
                 touched = True
                 continue
-            if now - int(e.get("at") or now) > self.TRACE_LATER_TTL and int(e.get("n") or 0) >= self.TRACE_LATER_TTL_MIN_N:
+            if now - int(e.get("at") or now) > self.TRACE_LATER_TTL and int(e.get("n") or 0) >= self.TRACE_LATER_TTL_MIN_N \
+                    and self._trace_later_expire_ok(h, e, now):
                 tl.pop(h, None)
                 touched = True
                 self._note("_native_notes", {"kind": "trace_later_giveup", "tx": h[:14], "n": int(e.get("n") or 0)})
@@ -7566,7 +7958,13 @@ class RpcChainWatcher(RpcSynthMixin):
             first9 = not done
             done += 1
             touched = True
-            tmp9 = {"_trace_parity_first": bool(int(e.get("n") or 0) % 2)}
+            st9 = self._trace_stg_get(e)
+            ns9 = {self._trace_nid(u) for u in self.trace_rpcs}
+            ctd9, pad9 = bool(ns9) and ns9 <= set(st9["ct"]), bool(ns9) and ns9 <= set(st9["pa"])
+            tmp9 = {"_trace_parity_first": bool(int(e.get("n") or 0) % 2) if ctd9 == pad9 else ctd9}
+            tmp9.update(_alch_n=int(e.get("n") or 0), _alch_blk=int(e.get("blk") or 0))
+            tmp9["_trace_stg"] = {"ct": st9["ct"], "pa": st9["pa"], "alch": ctd9 and pad9}
+            sent9 = int(self.__dict__.get("_alch_sent") or 0)
             try:
                 with self._trace_budget(max(t9 + self.TRACE_LATER_STEP_SEC, time.time() + self.TRACE_FIRST_SEC) if first9 else t9 + self.TRACE_LATER_STEP_SEC):
                     self._trace_internal(h, tmp9)
@@ -7577,7 +7975,9 @@ class RpcChainWatcher(RpcSynthMixin):
                     if not isinstance(s9, dict):
                         raise s9 if isinstance(s9, Exception) else RuntimeError("상세 없음")
             except Exception as ex:
+                self._trace_stg_put(e, st9, sent9)
                 if isinstance(ex, TraceDeferred) or "예산 소진" in str(ex):
+                    e["dfr"] = now
                     break
                 if self._trace_gone(ex):
                     tl.pop(h, None)
@@ -7590,6 +7990,8 @@ class RpcChainWatcher(RpcSynthMixin):
             if s9 is not None:
                 s9["internal"] = rows9
                 s9["internal_note"] = "trace"
+                if tmp9.get("internal_src"):
+                    s9["internal_src"] = tmp9["internal_src"]
                 if any(self._touches(s9, w) for w in self.wallets):
                     self._emit(h, s9, head)
                     n_emit += 1
@@ -7927,16 +8329,30 @@ class RpcChainWatcher(RpcSynthMixin):
                 s9 = dets.get(h)
                 err9 = None
                 if isinstance(s9, dict):
+                    st9 = hst9 = None
                     try:
                         ht9 = self.__dict__.setdefault("_hq_try", {})
-                        s9["_trace_parity_first"] = bool(int(ht9.get(h) or 0) % 2)
+                        hs9 = self.__dict__.setdefault("_hq_stg", {})
+                        if len(hs9) > 20000:
+                            hs9.clear()
+                        hst9 = hs9.setdefault(h, {})
+                        st9 = self._trace_stg_get(hst9)
+                        ns9 = {self._trace_nid(u) for u in self.trace_rpcs}
+                        ctd9, pad9 = bool(ns9) and ns9 <= set(st9["ct"]), bool(ns9) and ns9 <= set(st9["pa"])
+                        s9["_trace_parity_first"] = bool(int(ht9.get(h) or 0) % 2) if ctd9 == pad9 else ctd9
+                        s9["_trace_stg"] = {"ct": st9["ct"], "pa": st9["pa"], "alch": ctd9 and pad9}
+                        sent9 = int(self.__dict__.get("_alch_sent") or 0)
                         with self._trace_budget(max(deadline, time.time() + self.TRACE_FIRST_SEC) if first9 else deadline):
                             self._trace_internal(h, s9)
                         s9.pop("_trace_parity_first", None)
                         ht9.pop(h, None)
+                        hs9.pop(h, None)
                     except Exception as e:
                         err9 = e
                         s9.pop("_trace_parity_first", None)
+                        s9.pop("_trace_stg", None)
+                        if st9 is not None and isinstance(hst9, dict):
+                            self._trace_stg_put(hst9, st9, sent9)
                         if not isinstance(e, TraceDeferred):
                             ht9 = self.__dict__.setdefault("_hq_try", {})
                             ht9[h] = int(ht9.get(h) or 0) + 1
@@ -8117,15 +8533,17 @@ class RpcChainWatcher(RpcSynthMixin):
         if bk9 is not None and self._bk_jobs():
             dn9, tt9 = self._bk_lane(self._bk_jobs())
             self.progress.update(f"{self.chain}:rpc", phase="extend", unit="blocks", done=dn9, total=tt9,
-                                 note=(self.last_scan_metrics or {}).get("stop"))
+                                 note=(self.last_scan_metrics or {}).get("stop"), via=self._sel_via())
+            self._sel_lane(tt9 - dn9)
         else:
+            self._sel_lane(0)
             nt9 = (self.last_scan_metrics or {}).get("stop")
             if nt9 is None and ((self.progress.items.get(f"{self.chain}:rpc") or {}).get("note") or "").startswith("재기동 — 뒤 차선"):
                 nt9 = ""
             self.progress.update(f"{self.chain}:rpc", phase="live" if complete else ("extend" if self.cursor.get("_since_ext") else "scan"),
                                  unit="blocks",
                                  done=max(0, cmin - start), total=max(1, safe - start),
-                                 note=nt9)
+                                 note=nt9, via=self._sel_via())
         gaps = self.cursor.get("_native_gaps") or []
         progressing = (not complete) and advanced > 0 and not stalled
         self._rpc_cycle_failed = not (complete or progressing)

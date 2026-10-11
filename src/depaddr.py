@@ -98,6 +98,11 @@ def is_evm(a) -> bool:
     return bool(_EVM_RE.match(str(a or "").strip()))
 
 
+def _nx_key(a):
+    import chain_registry
+    return chain_registry.key_parse(a)
+
+
 def chain_of(network, currency=None, address=None):
     n = str(network or "").strip().upper()
     if not n:
@@ -1106,7 +1111,11 @@ def _load_index(path: str | None = None):
             recs = tmp["records"]
         idx = {}
         for r in recs:
-            idx.setdefault(norm_addr(r["address"]), []).append(r)
+            k9 = norm_addr(r["address"])
+            idx.setdefault(k9, []).append(r)
+            nx9 = _nx_key(r["address"])
+            if nx9 and nx9[1] != k9:
+                idx.setdefault(nx9[1], []).append(r)
         c.update(mt=mt, idx=idx, path=p, exmeta=exmeta, at=time.time())
         return idx, exmeta
 
@@ -1128,10 +1137,12 @@ def lookup_all(chain, address, tag=None, currency=None, include_manual=True) -> 
     idx, exmeta = _load_index()
     rows = list(idx.get(a) or [])
     if include_manual:
-        rows += [r for r in _manual_rows() if norm_addr(r["address"]) == a]
+        rows += [r for r in _manual_rows() if norm_addr(r["address"]) == a or (_nx_key(r["address"]) or (None, None))[1] == a]
     if not rows:
         return []
     q_chain = str(chain or "").strip().lower() or None
+    import chain_registry
+    q_nx = chain_registry.is_nonevm(q_chain)
     q_tag = str(tag).strip() if tag not in (None, "") else None
     out = []
     for r in rows:
@@ -1139,6 +1150,8 @@ def lookup_all(chain, address, tag=None, currency=None, include_manual=True) -> 
         if rt and q_tag is not None and rt != q_tag:
             continue
         rc = r.get("chain") or chain_of(r.get("network"), r.get("currency"), r.get("address"))
+        if rc is None and q_nx:
+            rc = (_nx_key(r["address"]) or (None, None))[0]
         if q_chain and rc == q_chain:
             match, sc = "exact", 3
         elif q_chain and q_chain != "sol" and is_evm(r["address"]) and (rc is None or rc in EVM_CHAINS):

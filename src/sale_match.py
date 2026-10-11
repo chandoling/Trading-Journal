@@ -316,6 +316,38 @@ def build_lots(cache: dict, price_fn=None, off=(), seed=None) -> list:
     return lots
 
 
+def build_settlements(cache: dict, off=(), skip=()) -> list:
+    off = {str(x) for x in (off or ())}
+    skip = {str(x) for x in (skip or ())}
+    out = []
+    for key in sorted((cache or {}).get("owners") or {}):
+        rec = cache["owners"][key]
+        if not isinstance(rec, dict) or rec.get("err"):
+            continue
+        chain, owner = rec.get("chain"), _addr(rec.get("owner"))
+        for a, inf in sorted((rec.get("auctions") or {}).items()):
+            lid = f"{chain}:{a}:{owner}"
+            if not isinstance(inf, dict) or not inf.get("ok") or not isinstance(inf.get("currency"), dict) or lid in skip or lid in off:
+                continue
+            cdec = _decimals(inf["currency"].get("dec"))
+            bid_d = []
+            for b in rec.get("bids") or []:
+                if not isinstance(b, dict) or b.get("auction") != a or "filled" not in b:
+                    continue
+                try:
+                    am9, rf9 = Decimal(str(b.get("amount") or 0)), Decimal(str(b.get("refunded") or 0))
+                except (InvalidOperation, ValueError, TypeError):
+                    continue
+                bt9, et9 = str(b.get("bid_tx") or "").lower(), str(b.get("exit_tx") or "").lower()
+                if am9 <= 0 or not (Decimal(0) < rf9 <= am9) or not bt9 or not et9:
+                    continue
+                bid_d.append({"id": b.get("id"), "bid_tx": bt9, "exit_tx": et9,
+                              "amount": am9 / (Decimal(10) ** cdec), "refunded": rf9 / (Decimal(10) ** cdec)})
+            if bid_d and owner:
+                out.append({"id": lid, "chain": chain, "auction": a, "bidder": owner, "cur_addr": _addr(inf["currency"].get("addr")), "bid_d": bid_d})
+    return out
+
+
 def collect_inflows(conn, lots, origin_cache, my_addrs) -> tuple:
     out, need = [], set()
     live = list(lots)

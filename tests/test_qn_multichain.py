@@ -70,18 +70,19 @@ check("Q3e apply(qn2) = 로그 풀엔 안 붙임(BSC·Base · getLogs 안 씀) �
       done == {"bsc": ["quicknode"], "base": ["quicknode"], "base_trace": ["quicknode"]}
       and QBASE not in cb["rpc_logs"] and QBASE not in cb["rpc_log_span_caps"] and cb["archive_rpcs"][-1] == QBASE
       and QBSC not in cfg["bsc"]["logs_rpcs"] and QBSC not in (cfg["bsc"].get("getlogs_span_caps") or {}) and cfg["bsc"]["archive_rpcs"][-1] == QBSC
-      and cb["trace_rpcs"] == [QBASE], (done, cb, cfg["bsc"]))
+      and cb["trace_rpcs"] == [QBASE, "https://base.drpc.org"], (done, cb, cfg["bsc"]))
 cfgt = json.loads(json.dumps(CFG))
 cfgt["chains"]["base"]["trace_rpcs"] = ["https://my-trace.invalid"]
 NK.apply(cfgt, env={NK.ENV_QN: ETH}, settings={})
-check("Q3e2 이용자가 config 에 trace_rpcs 를 적었으면 그 앞에 QuickNode 만 끼움", cfgt["chains"]["base"]["trace_rpcs"] == [QBASE, "https://my-trace.invalid"],
+check("Q3e2 이용자가 config 에 trace_rpcs 를 적었으면 그 목록 그대로 앞 · 뒤에 QuickNode(cn18 순서 — 이용자 목록 = 16차 기본이라 drpc 안 붙음)",
+      cfgt["chains"]["base"]["trace_rpcs"] == ["https://my-trace.invalid", QBASE],
       cfgt["chains"]["base"]["trace_rpcs"])
 cfgn = json.loads(json.dumps(CFG))
 NK.apply(cfgn, env={}, settings={})
 check("Q3e3 키 없음 = trace_rpcs 안 만듦(내장 drpc 그대로)", "trace_rpcs" not in cfgn["chains"]["base"], cfgn["chains"]["base"])
 import evm_watch
 nd = evm_watch.rpc_nodes(cfg, "base")
-check("Q3e4 수집기 노드 해석: trace = QuickNode 하나 · 로그 = QuickNode 없음 · 상태 = 뒤 예비", nd["trace"] == [QBASE] and QBASE not in nd["logs"]
+check("Q3e4 수집기 노드 해석: trace = QuickNode → 내장 drpc(cn18) · 로그 = QuickNode 없음 · 상태 = 뒤 예비", nd["trace"] == [QBASE, "https://base.drpc.org"] and QBASE not in nd["logs"]
       and QBASE in nd["state"], nd)
 bf_engine.rpc_day_configure({"rpc_day_limits": cfg["rpc_day_limits"]})
 check("Q3f 만든 주소는 하루 장부 node_quicknode 로 계량", bf_engine._rpc_day_of("fake-name.base-mainnet.quiknode.pro") == "node_quicknode")
@@ -235,7 +236,8 @@ root = os.path.abspath(os.path.join(T.HERE, ".."))
 envx = open(os.path.join(root, ".env.example"), encoding="utf-8").read()
 check("Q8a .env.example = TJ_QUICKNODE_KEY 한 칸(옛 칸 줄 없음)", "\nTJ_QUICKNODE_KEY=" in envx and "\nTJ_QUICKNODE_BSC_KEY=" not in envx)
 js = open(os.path.join(T.ROOT, "web", "v2", "setup.js"), encoding="utf-8").read()
-check("Q8b 화면 안내 = 멀티체인 · 무료 플랜 · 기본 80%", "멀티체인" in js and "무료 플랜도 돼요" in js and "기본 80%" in js and "유료만(무료 등급 없음)" not in js)
+check("Q8b 화면 안내 = 멀티체인 · 유료나 1개월 무료 체험 · 한도 80% · '무료 플랜' 문구 없음", "멀티체인" in js and "1개월 무료 체험" in js and "월 한도의 80%" in js
+      and "무료 플랜도 돼요" not in js and "유료만(무료 등급 없음)" not in js)
 check("Q8c 설정 칸 = 멀티체인 한 칸", [k for k, _l in ss.GROUPS["quicknode"]["fields"]] == [NK.ENV_QN])
 
 T.finish()

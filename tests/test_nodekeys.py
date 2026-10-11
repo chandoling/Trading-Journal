@@ -70,9 +70,10 @@ check("K2 받은 주소 = 질의·조각 떼고 호스트 소문자", NK._qn_url
       == "https://fake-one.bsc.quiknode.pro/tok12345/", NK._qn_url("https://Fake-One.BSC.quiknode.pro/tok12345/?a=1#f", "bsc"))
 
 pl0 = NK.plans({})
-check("K3a 기본 = 전부 무료 · 유료 비율 기본 10(QuickNode 80 — qn1011) · 월 한도 없음",
+check("K3a 기본 = 전부 무료 · 유료 비율 기본 10(QuickNode 80 — qn1011) · 월 한도 없음 · Chainnodes(cn18) 도 같은 꼴",
       pl0 == {"nodereal": {"plan": "free", "share": 10, "month": None}, "ankr": {"plan": "free", "share": 10, "month": None},
-              "quicknode": {"plan": "free", "share": 80, "month": None}, "alchemy": {"plan": "free", "share": 10, "month": None}}, pl0)
+              "quicknode": {"plan": "free", "share": 80, "month": None}, "chainnodes": {"plan": "free", "share": 10, "month": None},
+              "alchemy": {"plan": "free", "share": 10, "month": None}}, pl0)
 pl1 = NK.plans({"node_plans": {"nodereal": {"plan": "paid", "share": 25, "month": 500_000_000},
                                "ankr": {"plan": "paid", "share": 7, "month": True},
                                "quicknode": {"plan": "free", "share": 50, "month": 1000}}})
@@ -135,12 +136,13 @@ cb = cfg["chains"]["base"]
 check("K6f Base 로그 = 키 노드 먼저 · 공개 노드 예비 · QuickNode 없음", cb["rpc_logs"] == [us["base"][0][1]] + ["https://pub-base.invalid"], cb["rpc_logs"])
 check("K6g Base 상한 = 기존 유지 + Ankr 3천(QuickNode 칸 없음)",
       cb["rpc_log_span_caps"] == {"https://pub-base.invalid": 5000, us["base"][0][1]: 3000}, cb["rpc_log_span_caps"])
-check("K6g2 Base trace = QuickNode 하나만(내장 drpc 예비 없음 — 오너 '잘하는 API 가 고쳐질 때까지 기다림')", cb.get("trace_rpcs") == [QBa], cb.get("trace_rpcs"))
+check("K6g2 Base trace = QuickNode → 16차 기본(내장 drpc 꼬리 — cn18)", cb.get("trace_rpcs") == [QBa, "https://base.drpc.org"], cb.get("trace_rpcs"))
 check("K6h Base 상태(archive) = 키 노드는 뒤 예비(공개 상태 풀 먼저)", cb["archive_rpcs"][-2:] == [u for _, u in us["base"]]
       and len(cb["archive_rpcs"]) > 2, cb["archive_rpcs"])
 lim = cfg["rpc_day_limits"]
 check("K6i 하루 장부 표 = 서비스 넷 다(무료 80% · QuickNode 기본 무료 80% · Alchemy 는 노드 풀 밖이어도 장부는 있음)",
-      set(lim) == {"node_nodereal", "node_ankr", "node_quicknode", "node_alchemy"} and lim["node_nodereal"]["pct"] == 80.0 and lim["node_quicknode"]["pct"] == 80.0
+      set(lim) == {"node_nodereal", "node_ankr", "node_quicknode", "node_chainnodes", "node_alchemy"} and lim["node_nodereal"]["pct"] == 80.0 and lim["node_quicknode"]["pct"] == 80.0
+      and lim["node_chainnodes"]["unit"] == "calls" and lim["node_chainnodes"]["pct"] == 80.0
       and lim["node_alchemy"]["pct"] == 80.0, lim)
 snap1 = json.dumps(cfg, sort_keys=True)
 NK.apply(cfg, env=ENV, settings={})

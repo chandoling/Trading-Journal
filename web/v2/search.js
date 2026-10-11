@@ -4,7 +4,9 @@
   const API = () => window.__tjSearchApi || null;
   const $ = (s, r) => (r || document).querySelector(s);
   const LS_RECENT = 'tj_v2_srch_recent', LS_SAVED = 'tj_v2_srch_saved';
-  const RECENT_MAX = 8, SAVED_MAX = 12, GROUP_N = 3, GROUP_ALL = 40, SRV_DEBOUNCE = 150, Q_MAX = 120, SRCH_PG = 20;
+  const RECENT_MAX = 8, SAVED_MAX = 12, GROUP_N = 3, GROUP_ALL = 40, SRV_DEBOUNCE = 150, Q_MAX = 120;
+  const srchPgSize = () => { try { const v = window.TJ && typeof window.TJ.pgSize === 'function' ? +window.TJ.pgSize() : 10; return v === 20 ? 20 : 10; } catch (e) { return 10; } };
+  let SRCH_PG = srchPgSize();
   const KINDS = [['sale', '세일 참가'], ['coin', '코인'], ['cycle', '매매일지'], ['outflow', '보낸 내역'], ['tx', '거래·해시'], ['event', '기록'], ['day', '날짜'], ['receipt', '차익 영수증'],
     ['review', '리뷰'], ['memo', '근거 메모'], ['pending', '미매칭'], ['nft', 'NFT'], ['other', '기타 자산'], ['wallet', '지갑'], ['deposit', '입금 주소'], ['setting', '설정']];
   const KL = Object.fromEntries(KINDS);
@@ -805,7 +807,8 @@
     ST.items = items;
     ST.groups = groupOf(items, P2);
     ST.flat = [];
-    if (scope) { const pgS9 = effQ() + '|' + scope; if (ST.pgSig !== pgS9 || !ST.pgK) { ST.pgSig = pgS9; ST.pgK = {}; } }
+    SRCH_PG = srchPgSize();
+    if (scope) { const pgS9 = effQ() + '|' + scope + '|' + SRCH_PG; if (ST.pgSig !== pgS9 || !ST.pgK) { ST.pgSig = pgS9; ST.pgK = {}; } }
     ST.groups.forEach(gr => {
       const lim = scope ? gr.items.length : ST.expand === gr.kind ? GROUP_ALL : GROUP_N, sg = srvGroup(gr.kind);
       gr.srvN = sg && sg.n != null ? +sg.n : null;

@@ -23,11 +23,12 @@ EXPLORERS = {
     "coingecko": {"name": "CoinGecko (시세·DEX·차트·NFT 바닥가 — 무료 데모 또는 유료 프로 키, 자동 판별)", "fields": [("TJ_COINGECKO_KEY", "API Key (Demo · Pro)")]},
     "nodereal": {"name": "NodeReal (BSC 옛 기록 — 무료 키로도 됨)", "fields": [("TJ_NODEREAL_KEY", "API Key")]},
     "ankr": {"name": "Ankr (받은 토큰 확인 · BSC·Base 옛 기록 — 무료 키)", "fields": [("TJ_ANKR_KEY", "API Key")]},
-    "quicknode": {"name": "QuickNode (멀티체인 엔드포인트 주소 하나 — 무료 플랜도 됨)", "fields": [("TJ_QUICKNODE_KEY", "멀티체인 엔드포인트 주소")],
+    "quicknode": {"name": "QuickNode (유료 요금제나 1개월 무료 체험 키 — 멀티체인 엔드포인트 주소 하나)", "fields": [("TJ_QUICKNODE_KEY", "멀티체인 엔드포인트 주소")],
                   "legacy": ("TJ_QUICKNODE_BSC_KEY", "TJ_QUICKNODE_BASE_KEY")},
+    "chainnodes": {"name": "Chainnodes (무료 Core 월 1,250만 요청·초당 25 — Base 내부 이동 확인(trace) 우선)", "fields": [("TJ_CHAINNODES_KEY", "API 키 (또는 Base 주소)")]},
     "alchemy": {"name": "Alchemy (EVM 지갑 토큰·잔고 찾기 — 무료 키)", "fields": [("TJ_ALCHEMY_KEY", "API Key")]},
 }
-NODE_GROUPS = ("nodereal", "ankr", "quicknode", "alchemy")
+NODE_GROUPS = ("nodereal", "ankr", "quicknode", "chainnodes", "alchemy")
 EXCHANGES = {
     "upbit": {"name": "업비트", "fields": [("UPBIT_ACCESS", "Access Key"), ("UPBIT_SECRET", "Secret Key")]},
     "bithumb": {"name": "빗썸", "fields": [("TJ_BITHUMB_KEY", "API Key"), ("TJ_BITHUMB_SECRET", "Secret Key")]},
@@ -566,6 +567,187 @@ def rename_wallet(address: str, label: str) -> int:
     return n
 
 
+def chain_wallet_list(cfg: dict) -> list:
+    import chain_registry as reg
+    return [{"chain": r["chain"], "name": reg.display_name(r["chain"]), "key": r["key"], "display": r["display"], "label": r["label"],
+             "mode": r["mode"], "available": reg.available(r["chain"])} for r in reg.wallets(cfg)]
+
+
+def validate_chain_wallet(chain: str, address=None, mode: str = "address", descriptor=None, gap_limit=20, network: str = "mainnet",
+                          script_type=None) -> dict:
+    import address_codec as ac
+    import chain_registry as reg
+    if not reg.is_nonevm(chain):
+        raise ValueError("지원하지 않는 체인이에요")
+    raw = [x for x in (address, descriptor) if isinstance(x, str)]
+    strip9 = [re.sub(r"^\s*(0x[0-9a-fA-F]{64}|-?\d{1,3}[:_][0-9a-fA-F]{64})\s*$", "", x) if chain in ("sui", "ton") else x for x in raw]
+    why = secret_like(strip9) or (ac.PRIVATE_HINT if any(ac.has_private_material(x) for x in strip9) else "") \
+        or (ac.PRIVATE_HINT if any("privkey" in x.lower() for x in raw) else "")
+    if why:
+        raise ValueError(why)
+    if not reg.available(chain):
+        raise ValueError(f"{reg.display_name(chain)} 지갑 수집은 준비 중이에요 — 수집기가 들어간 판부터 등록할 수 있어요")
+    if chain == "btc":
+        ent = {"chain": "btc", "network": network, "mode": mode}
+        if mode == "descriptor":
+            d9 = str(descriptor or "").strip()
+            if re.fullmatch(r"[xyz]pub[1-9A-HJ-NP-Za-km-z]{100,115}", d9):
+                import btc_descriptor
+                st9 = str(script_type) if script_type in ("pkh", "sh(wpkh)", "wpkh", "tr") else None
+                d9 = btc_descriptor.descriptor_from_xpub(d9, st9, network)
+            ent.update(descriptor=d9, gap_limit=gap_limit)
+        else:
+            ent.update(mode="address", address=str(address or ""))
+        src = reg.btc_source(ent, network)
+        if src["mode"] == "descriptor":
+            ent["descriptor"] = src["descriptor"]
+        else:
+            ent["address"] = src["address"]
+        return {"entry": ent, "key": src["key"], "display": src["display"],
+                "note": "이 주소만 추적해요 — 잔돈·다른 받는 주소는 빠질 수 있어요(HD 지갑 전체는 디스크립터로)" if src["mode"] == "address"
+                else "받는 주소·잔돈 주소를 공개 키로 찾아요(개인 키 없음 · 화면엔 가려 보여요)"}
+    key = reg.owner_key(chain, str(address or ""), network)
+    stored = ac.ton_raw(key) if chain == "ton" else reg.display_owner(chain, key)
+    return {"entry": {"chain": chain, "network": network, "address": stored}, "key": key, "display": reg.display_owner(chain, key),
+            "note": f"{reg.display_name(chain)} 주소 형식 확인됨"}
+
+
+def _btc_hd_scripts(row: dict) -> set:
+    import btc_descriptor as bd
+    import chain_registry as reg
+    e = row["entry"]
+    plan = bd.plan_from_descriptor(str(e.get("descriptor") or ""), row["network"])
+    gap = e.get("gap_limit", 20)
+    gap = gap if isinstance(gap, int) and not isinstance(gap, bool) and 1 <= gap <= 1000 else 20
+    rend = e.get("range_end")
+    rend = rend if isinstance(rend, int) and not isinstance(rend, bool) and 0 <= rend < 100000 else None
+    br = {}
+    try:
+        st = common.read_json(os.path.join(common.STATE_DIR, reg.spec("btc").cursor_file), None)
+        br = ((((st or {}).get("btc") or {}).get("wallets") or {}).get(row["key"]) or {}).get("br") or {}
+    except Exception:
+        br = {}
+    out = set()
+    for b in plan.branches:
+        try:
+            used = int((br.get(str(b)) or {}).get("used", -1))
+        except (TypeError, ValueError):
+            used = -1
+        end = used + gap if rend is None else max(used + gap, rend)
+        for i in range(0, min(end, 100000 - 1) + 1):
+            out.add(plan.derive(b, i)[0].lower())
+    return out
+
+
+_BTC_NO_MOVE = (" 같은 지갑 그대로의 삭제·재등록은 되지만, 이미 기록한 단일 주소를 HD 지갑으로(또는 HD 지갑을 단일 주소로) 바꾸는 이전은"
+                " 지원하지 않아요(지워도 기록이 남아 두 번 세져요) — 처음부터 HD 지갑 하나 또는 단일 주소로만 등록하세요")
+
+
+def _btc_overlap(have: list, ent: dict, key: str):
+    import chain_registry as reg
+    rows = [r for r in have if r["chain"] == "btc"]
+    new = {"key": key, "entry": ent, "network": ent.get("network") or "mainnet", "mode": ent.get("mode")}
+    if ent.get("mode") == "descriptor":
+        singles = [r for r in rows if r["mode"] == "address"]
+        if not singles:
+            return None
+        mine = _btc_hd_scripts(new)
+        hit = [r for r in singles if reg.btc_source(r["entry"], r["network"])["script"].lower() in mine]
+        if hit:
+            return (f"이미 등록된 단일 주소 지갑({hit[0]['label'] or '이름 없음'})이 이 HD 지갑에 들어 있어요 — 같은 BTC 를 두 번 세지 않게 막았어요."
+                    + _BTC_NO_MOVE)
+        return None
+    spk = reg.btc_source(ent, new["network"])["script"].lower()
+    for r in rows:
+        if r["mode"] == "descriptor" and spk in _btc_hd_scripts(r):
+            return (f"이 주소는 이미 등록된 HD 지갑({r['label'] or '이름 없음'})에 들어 있어요 — 따로 추가하지 않아도 그 지갑으로 기록돼요."
+                    + _BTC_NO_MOVE)
+    return None
+
+
+def add_chain_wallet(chain: str, address=None, label=None, mode: str = "address", descriptor=None, gap_limit=20, script_type=None) -> dict:
+    import chain_registry as reg
+    v = validate_chain_wallet(chain, address, mode, descriptor, gap_limit, script_type=script_type)
+    with LOCK:
+        cfg = read_config_raw()
+        lst = cfg.get(reg.CFG_KEY)
+        if lst is None:
+            lst = cfg[reg.CFG_KEY] = []
+        if not isinstance(lst, list):
+            raise ValueError("config.json chain_wallets 형식 오류")
+        have = reg.wallets(cfg)
+        if any(r["chain"] == chain and r["key"] == v["key"] for r in have):
+            raise ValueError("이미 등록된 지갑입니다")
+        why9 = _btc_overlap(have, v["entry"], v["key"]) if chain == "btc" else None
+        if why9:
+            raise ValueError(why9)
+        if len(have) >= reg.MAX_CHAIN_WALLETS:
+            raise ValueError(f"새 체인 지갑은 최대 {reg.MAX_CHAIN_WALLETS}개까지예요")
+        n_all = len({_addr_key(w) for w in cfg.get("wallets") or [] if isinstance(w, dict)}) + len(have)
+        if n_all >= MAX_ADDRESSES:
+            raise ValueError(cap_error(n_all))
+        if label is None or not str(label).strip():
+            used = {str(w.get("label")) for w in (cfg.get("wallets") or []) + lst if isinstance(w, dict) and w.get("label")}
+            n = 1 + sum(1 for r in have if r["chain"] == chain)
+            label = f"{reg.display_name(chain)} {n}"
+            while label in used:
+                n += 1
+                label = f"{reg.display_name(chain)} {n}"
+        ent = dict(v["entry"], label=_label_ok(label))
+        lst.append(ent)
+        write_config_raw(cfg)
+    return {"chain": chain, "key": v["key"], "display": v["display"], "label": ent["label"], "note": v["note"]}
+
+
+def _chain_wallet_match(chain: str, ident: str):
+    import chain_registry as reg
+
+    def same(r):
+        if r["chain"] != chain:
+            return False
+        if ident in (r["key"], r["display"]):
+            return True
+        try:
+            return chain != "btc" and reg.owner_key(chain, ident) == r["key"]
+        except ValueError:
+            return False
+    return same
+
+
+def remove_chain_wallet(chain: str, ident: str) -> int:
+    import chain_registry as reg
+    ident = str(ident or "").strip()
+    with LOCK:
+        cfg = read_config_raw()
+        lst = cfg.get(reg.CFG_KEY)
+        if not isinstance(lst, list):
+            return 0
+        same = _chain_wallet_match(chain, ident)
+        keep = [w for w in lst if not any(same(r) for r in reg.wallets({reg.CFG_KEY: [w]}))]
+        n = len(lst) - len(keep)
+        if n:
+            cfg[reg.CFG_KEY] = keep
+            write_config_raw(cfg)
+    return n
+
+
+def rename_chain_wallet(chain: str, ident: str, label: str) -> int:
+    import chain_registry as reg
+    label = _label_ok(label)
+    ident = str(ident or "").strip()
+    n = 0
+    with LOCK:
+        cfg = read_config_raw()
+        same = _chain_wallet_match(chain, ident)
+        for w in cfg.get(reg.CFG_KEY) or []:
+            if any(same(r) for r in reg.wallets({reg.CFG_KEY: [w]})):
+                w["label"] = label
+                n += 1
+        if n:
+            write_config_raw(cfg)
+    return n
+
+
 MAX_PERP = 30
 
 
@@ -652,9 +834,15 @@ def unit_inputs(unit: str, cfg: dict | None = None, env: dict | None = None):
         nk = nodekeys.fingerprint()
     except Exception:
         nk = ""
+    if unit in ("evm", "bsc"):
+        try:
+            import nodekeys
+            qr = nodekeys.route_fp("base" if unit == "evm" else "bsc")
+        except Exception:
+            qr = ""
     if unit == "evm":
         used = sorted({c for c, _ in evm})
-        fp = _h([evm, {c: (cfg.get("chains") or {}).get(c) for c in used}, ek, cfg.get("evm_poll_sec"), nk])
+        fp = _h([evm, {c: (cfg.get("chains") or {}).get(c) for c in used}, ek, cfg.get("evm_poll_sec"), nk] + ([qr] if qr else []))
         return (bool(evm), "EVM 지갑 없음" if not evm else "", fp)
     if unit == "sol":
         need_key = (cfg.get("sol") or {}).get("rpc") == "helius"
@@ -665,12 +853,18 @@ def unit_inputs(unit: str, cfg: dict | None = None, env: dict | None = None):
             return False, "Helius 키 없음(Solana 수집에 필요 — 무료 발급)", fp
         return True, "", fp
     if unit == "bsc":
-        return (bool(bsc), "BSC 지갑 없음" if not bsc else "", _h([bsc, cfg.get("bsc"), nk]))
+        return (bool(bsc), "BSC 지갑 없음" if not bsc else "", _h([bsc, cfg.get("bsc"), nk] + ([qr] if qr else [])))
     if unit == "core":
         allw = sorted({(w.get("type", "evm"), w.get("chain"), w.get("address") if w.get("type") == "sol"
                         else (w.get("address") or "").lower()) for w in ws})
-        return True, "", _h([allw, cfg.get("exchange_addresses"), hk, nk, cfg.get("backfill_months"),
-                             cfg.get("backfill_full_history")])
+        parts = [allw, cfg.get("exchange_addresses"), hk, nk, cfg.get("backfill_months"), cfg.get("backfill_full_history")]
+        nev = _nonevm_core_view(cfg)
+        if nev:
+            parts.append(nev)
+            parts.append([(c9, _nonevm_chain_fp(c9, cfg, genv)) for c9 in sorted({c9 for c9, _k9 in nev})])
+        return True, "", _h(parts)
+    if unit in _nonevm_units():
+        return _nonevm_unit_inputs(unit, cfg, genv)
     if unit == "web":
         return True, "", _h([web_restart_view(cfg), nk])
     return True, "", _h([unit])
@@ -691,9 +885,56 @@ def web_restart_view(cfg: dict) -> dict:
 RUNNER_UNITS = ("evm", "sol", "bsc", "core", "web")
 
 
+def _nonevm_units() -> tuple:
+    try:
+        import chain_registry as reg
+        return reg.CHAINS
+    except Exception:
+        return ()
+
+
+def _nonevm_core_view(cfg: dict) -> list:
+    try:
+        import chain_registry as reg
+        return sorted((r["chain"], r["key"]) for r in reg.wallets(cfg))
+    except Exception:
+        return []
+
+
+def _nonevm_chain_fp(chain: str, cfg: dict, genv) -> str:
+    try:
+        return _nonevm_unit_inputs(chain, cfg, genv)[2]
+    except Exception:
+        return ""
+
+
+def _nonevm_unit_inputs(unit: str, cfg: dict, genv):
+    import chain_registry as reg
+    sp = reg.spec(unit)
+    keys = sorted(r["key"] for r in reg.wallets(cfg, unit))
+    kh = hashlib.sha256(genv(sp.key_env).encode()).hexdigest()[:8] if sp.key_env and genv(sp.key_env) else ""
+    fp = _h([keys, (cfg.get(reg.CFG_CHAIN_KEY) or {}).get(unit) if isinstance(cfg.get(reg.CFG_CHAIN_KEY), dict) else None, kh])
+    if not keys:
+        return False, f"{sp.name} 지갑 없음", fp
+    if not reg.available(unit):
+        return False, f"{sp.name} 수집기 준비 중(이 판 미포함)", fp
+    if sp.key_policy == "required" and not kh:
+        return False, f"{sp.name} 키 없음", fp
+    return True, "", fp
+
+
+def runner_units(cfg: dict = None) -> tuple:
+    try:
+        import chain_registry as reg
+        extra = tuple(c for c in reg.configured_chains(cfg if cfg is not None else load_config_quiet()))
+    except Exception:
+        extra = ()
+    return RUNNER_UNITS + extra
+
+
 def runner_status(path_fmt: str | None = None) -> dict:
     out = {}
-    for u in RUNNER_UNITS:
+    for u in RUNNER_UNITS + _nonevm_units():
         p = os.path.join(common.STATE_DIR, f"runner_{u}.json")
         try:
             with open(p, "r", encoding="utf-8") as f:

@@ -1097,7 +1097,7 @@ IDENT_LO, IDENT_HI = 0.5, 2.0
 _CGX_LOCK = threading.Lock()
 KNOWN_CG_ID = {"BTC": "bitcoin", "ETH": "ethereum", "BNB": "binancecoin", "SOL": "solana", "AVAX": "avalanche-2", "OKB": "okb",
                "XRP": "ripple", "DOGE": "dogecoin", "TRX": "tron", "ADA": "cardano", "POL": "polygon-ecosystem-token",
-               "HYPE": "hyperliquid"}
+               "HYPE": "hyperliquid", "SUI": "sui", "TON": "the-open-network"}
 
 
 def parse_cg_ex_tickers(d):

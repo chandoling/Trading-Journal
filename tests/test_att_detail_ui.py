@@ -45,7 +45,9 @@ const deps = {
   UI_SHEETS: {}, monthRealized: () => 0, fetch: (u, o) => { SENT.push(u); return FETCH ? FETCH(u) : new Promise(() => {}); }, onUnauthorized: () => {}, renderOverlay: () => {},
   uiSheetOpen: (k, v, t) => { S.sheet = { k, v, t }; }, LS: { set: () => {} }, pvRoot: () => {}, render: () => {}, oaSwapKeepForm: () => {}, pvFix: () => {}, dmSwapKeepForm: () => {},
   rvRefocus: () => {}, clearCache: () => {}, document: { body: {}, activeElement: null }, uiSheetClose: () => { S.sheet = null; }, revealAndHighlight: () => Promise.resolve(true), openFutRcpt: () => {}, vib: () => {}, $: () => null, toast: () => {},
+  uiPgSz: n => Math.min(n, PGSZ.v),   // ui18: 설정 쪽 크기(app.js uiPgSz — 아래 종전 검사 = 20)
 };
+const PGSZ = { v: 20 };
 const names = Object.keys(deps);
 const F = new Function(...names, B + '\nreturn { attOf, attItems, attItemsK, attBars, attdParts, attdItems, attdDays, attdRowsDay, attdSheet, attdTitle, attdActs, attdCache, attdFit, setHide: typeof setHide === "function" ? setHide : null, setRand: typeof setRand === "function" ? setRand : null, attdShow: typeof attdShow === "function" ? attdShow : (it => it), attdMoney: typeof attdMoney === "function" ? attdMoney : (v => m(v, { sign: true })), monthAtt, monthBarRows, mgBar, MATT_K };')(...names.map(k => deps[k]));
 const A = Object.assign(deps.A, F.attdActs());
@@ -129,6 +131,11 @@ chk(/CAX/.test(h.split('class="adr"')[1] || '') && /\+2\.5%|2\.5%/.test(txt(h)) 
 A.attdPg({ dataset: { v: '1' } });
 h = F.attdSheet('d|10-10|mk');
 chk(rowsOf(h) === nV - 20 && /21–\d+ \/ \d+/.test(txt(h)) && /data-v="1" disabled/.test(h), '다음 쪽 = 나머지(21–N) · 다음 막힘', { rows: rowsOf(h), nV });
+PGSZ.v = 10; S.attdUI.pg = 0; h = F.attdSheet('d|10-10|mk');   // ui18: 쪽 크기 10(설정 기본)
+chk(rowsOf(h) === 10 && /1–10 \/ \d+/.test(txt(h)) && /data-a="attdPg" data-v="1"/.test(h), 'ui18 쪽 크기 10: 분해 시트 첫 쪽 10개 · 1–10 / N', { rows: rowsOf(h) });
+S.attdUI.pg = 2; h = F.attdSheet('d|10-10|mk');
+chk(rowsOf(h) === nV - 20 && /21–\d+ \/ \d+/.test(txt(h)) && /data-v="1" disabled/.test(h), 'ui18 쪽 크기 10: 셋째 쪽 = 21–N · 다음 막힘', { rows: rowsOf(h), nV });
+PGSZ.v = 20; S.attdUI.pg = 1;
 A.attdGo({ dataset: { v: 'd|10-10|rz' } });
 h = F.attdSheet(S.sheet.v);
 chk(S.sheet.t === '현물 실현 · 10월 10일' && /data-a="attdRc" data-v="2026-10-10\|AAA"/.test(h) && /data-a="attdLp"/.test(h) && /가스 비용/.test(h) && rowsOf(h) >= 5 && /같아요/.test(h) && !/1–20/.test(txt(h)),

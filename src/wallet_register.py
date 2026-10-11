@@ -12,6 +12,11 @@ MANUAL = "pm2 restart tj-evm tj-sol tj-bsc tj-core tj-web"
 RELOAD_PATH = os.path.join(common.STATE_DIR, "wallet_reload.json")
 RELOAD_DONE_PATH = os.path.join(common.STATE_DIR, "wallet_reload_done.json")
 RELOAD_UNITS = ("tj-evm", "tj-sol", "tj-bsc", "tj-core", "tj-web")
+try:
+    import chain_registry as _reg
+    RELOAD_UNITS = RELOAD_UNITS + tuple(_reg.SPECS[c].unit for c in _reg.CHAINS)
+except Exception:
+    pass
 
 
 def req_fp(entry: dict) -> str:
@@ -115,6 +120,18 @@ def register_wallets(addresses, chains: list, source: str = "") -> dict:
                         "chains": sorted({c for r in ok for c in r.get("chains") or []}), "source": source or "",
                         "units": sorted(units)})
     return {"results": res, "added": len(ok), "apply": apply_info(sorted(units))}
+
+
+def register_chain_wallet(chain: str, address=None, label=None, mode: str = "address", descriptor=None, gap_limit=20,
+                          source: str = "", script_type=None) -> dict:
+    import chain_registry as reg
+    r = ss.add_chain_wallet(chain, address=address, label=label, mode=mode, descriptor=descriptor, gap_limit=gap_limit,
+                            script_type=script_type)
+    units = sorted({reg.spec(chain).unit, "tj-core", "tj-web"})
+    _record_reload({"ts": int(time.time()), "address": r.get("key"), "chains": [chain], "source": source or "", "units": units})
+    r = dict(r)
+    r["apply"] = apply_info(units)
+    return r
 
 
 def register_wallet(address: str, chains: list, alias: str, source: str = "", idempotent: bool = False) -> dict:

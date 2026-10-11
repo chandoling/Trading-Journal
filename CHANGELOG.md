@@ -3,6 +3,203 @@
 판마다 더해진 것과 바뀐 동작이에요. 지금 쓰는 법은 [README.md](README.md), 화면 사진은 README 의 '화면 미리보기'에 있어요.
 업데이트는 README [업데이트](README.md#업데이트) 순서대로(멈추기 → 백업 확인 → `git pull` → `bash tools/setup.sh` → `pm2 start ecosystem.config.js`) 하세요.
 
+## 2026-10-12 — Tron · Sui · TON · Bitcoin 지갑 · 외부 검토 버그 수정 · 주의 닫기 · 역할별 노드 선택 · Chainnodes
+
+**Tron·Sui·TON·Bitcoin 지갑(읽기 전용 · Bitcoin 은 HD 지갑 또는 주소 하나) · 새 체인 대사는 모르면 보류 · TON 거래소 출금 → 도착 연결 · 새 체인 지갑 검색 · 옛 Base 내부 이동 Alchemy 보완 · 역할별 노드 선택(속도·예상 남은 시간) ·
+'내 지갑' 재분류 이중 계상 · 세일(CCA) 환불·수동 참가금 손익 · 원장 복구 뒤 BNB Chain 다시 점검 · 디스크 자동 정리가 검증된 백업 보존 · 옛 보유 토큰 찾기 1,000행 넘김 ·
+헬스 주의 기준 재정비·닫기 · 목록 한 쪽 10/20개·'모두 보기' 없앰 · 같은 블록 안 거래 순서 · 새 체인 거래 상세 누락 주의 ·
+QuickNode 선택 칸(유료·1개월 체험)·거부 자동 복귀 · Chainnodes Base trace · 응답 본문 대기 상한**
+
+지난 판(2026-10-11 (2)) 뒤에 공개하지 않고 쌓인 두 판을 합친 판이에요.
+첫째는 지난 판을 처음부터 끝까지 읽은 외부 전체 검토가 찾은 버그를 하나씩 공개 시험으로 재현해(고치기 전 실패 → 고친 뒤 통과) 고친 것이에요 —
+받는 지갑을 대사(기초 잔고)로 맞춘 뒤 옛 보낸 내역을 '내 지갑'으로 고르면 받은 양이 두 번 세지던 것, 전액 환불된 세일 입찰의 결제 코인 원가가 설정에 따라 사라지던 것,
+원장을 백업으로 되돌린 뒤 BNB Chain 의 로그 없는 입금이 빠질 수 있던 것, 디스크 자동 정리가 손상된 최신 백업만 남기고 멀쩡한 옛 백업을 지울 수 있던 것,
+무료 이더스캔 1,000행 상한을 목록 끝으로 오인해 토큰 많은 지갑의 옛 보유 토큰을 놓치던 것, 24시간 지난 '시세 없는 보유' 주의가 새 코인이 더해져도 접혀 있던 것.
+헬스 주의는 이용자가 할 일이 있거나 돈 숫자가 틀릴 수 있는 것만 띄우도록 기준을 다시 잡고 항목별 '닫기'를 더했어요. QuickNode 는 상시 무료 플랜이 없어(1개월 체험 뒤 유료) 선택 칸으로 바로잡고,
+Base 내부 이동 확인(trace)에 무료 Chainnodes 키를 더했어요.
+둘째는 새 기능이에요 — **Tron · Sui · TON · Bitcoin 지갑**을 읽기 전용으로 넣을 수 있어요(키 없이도 돌아요 · Bitcoin 은 HD 지갑 또는 주소 하나).
+무료 추적 노드가 못 주는 **옛 Base 거래의 내부 ETH 이동**은 Alchemy 키로 채우고, 노드는 역할(옛 상태·상세·trace)별로 실제 속도를 재서 고르며 옛 기록 채우기가 너무 오래 걸리면 무료 키 노드를 먼저 써요.
+새 기능도 외부 검토를 네 번 더 거치며 찾은 문제를 같은 방식(재현 시험 먼저)으로 고쳤어요 — 새 체인은 모르는 것(못 받은 거래·모르는 자릿수·제공자 응답 이상)을 0 이나 '완료'로 확정하지 않고 보류해요.
+마지막으로 일반 사용 흐름을 다시 훑은 외부 검토가 찾은 같은 블록 안 거래 순서 문제와 새 체인 마무리(거래 상세 누락 주의 · 키를 바꾸면 원장도 다시 시작)를 같은 방식으로 고치고,
+긴 목록의 '모두 보기' 단계를 없앴어요. 드문 경우와 쓰는 법의 제한은 아래 알려진 한계에 적었어요. 사진은 다시 찍지 않았어요 — 새 체인 지갑 추가 화면 사진은 없어요(README '이번 판' 안내).
+
+> **업데이트** — README [업데이트](README.md#업데이트) 순서대로(멈추기 → 백업 확인 → `git pull` → `bash tools/setup.sh` → `pm2 start ecosystem.config.js` — 유닛을 전부 멈춘 뒤 한꺼번에 시작 ·
+> 공통 모듈(수집 HTTP·노드 선택·노드 키)이 바뀌어 이번에도 모든 유닛).
+> **새 유닛 `tj-tron`·`tj-sui`·`tj-ton`·`tj-btc`** 는 `pm2 start ecosystem.config.js` 로 같이 붙어요(`restart` 로는 안 붙어요) — 그 체인 지갑이 없으면 수집기를 띄우지 않고 '대기'예요 ·
+> 재부팅 뒤 자동 시작을 쓰면 `pm2 save` 를 한 번 더 하세요(새 유닛이 목록에 들어가요).
+> 재구축·데이터 개정은 없어요(업데이트만으로는 원장 쓰기 없음 · 새로 생기는 것 — `state/health_ack.json` 의 닫은 주의 · 옛 보유 토큰 찾기의 쌍별 이어 받기 표시 · QuickNode 거부 표시 · BNB Chain 복구 뒤 다시 점검 구간 ·
+> `state/node_stats/` 노드 관측(지워도 다시 생김) · 미룬 Base 내부 이동 항목의 단계 기록 · 만료로 빼는 옛 내부 이동의 전체 식별자 `state/leaf_later_unresolved_<체인>.jsonl`·`state/trace_later_unresolved_<체인>.jsonl` ·
+> 새 체인 지갑을 넣으면 `config.json` 의 `chain_wallets` 와 `state/cursor_<체인>.json`·`state/emitted_<체인>.json`·`state/inbox/<체인>/` — 원장 복원 도구가 새 체인 수집 상태도 함께 되감아요).
+> **새 체인 지갑을 넣었다면 `config.json` 을 따로 백업해 두세요** — `chain_wallets`(Bitcoin HD 지갑의 xpub·디스크립터 포함)는 일일 자동 백업(원장 밖 사본) 목록에 아직 없어요(다음 판).
+> 옛 보유 토큰 찾기는 업데이트 뒤 한 번 옛 기록을 다시 훑어요(이더스캔 계열 호출이 잠깐 늘 수 있음 · 공표 한도 80% 장부 안).
+> **목록 한 쪽은 이제 기본 10개**예요 — 기기마다 설정 › 화면 '목록 한 쪽'에서 20개로 되돌릴 수 있어요 · 긴 목록은 처음부터 한 쪽이 보이고 바로 '다음'(‘모두 보기’ 단계 없음).
+> **같은 블록 안 거래 순서**는 업데이트 뒤 새로 받는 거래부터 맞아요 — 이미 저장된 거래는 종전 순서 그대로예요(다시 받지 않음 · 원장 쓰기 없음).
+> **헬스 주의 기준이 바뀌었어요** — 값을 아는 거래소 대출 부채는 주의가 아니라 정상(이미 총자산에서 뺌) · 자동으로 회복되는 것(잔고 대조 차이 24시간 · Helius 하루 몫·Solana 공개 노드·GoPlus 대기·화면 빌드 6시간)은 오래 이어질 때만 ·
+> 시세 없는 실보유는 24시간 뒤 저절로 접히지 않아요 — 업데이트 뒤 접혀 있던 주의가 다시 보이면 내용을 확인하고 그 줄의 **닫기**를 누르세요(새 코인·지갑·체인이 생기거나 금액이 크게 늘면 다시 보여요).
+> **QuickNode 는 유료 요금제나 1개월 무료 체험 키가 있을 때만**(지난 판 '무료 플랜도 됨' 정정 — 상시 무료 없음) — 요금제 칩 '무료 키'는 '1개월 체험'으로 이름만 바뀌었어요(값·80% 그대로) ·
+> 체험이 끝나면 유료로 바꾸거나 키를 지우세요(키가 계속 거부되면 봇이 그 체인에서 알아서 빼고 기본 노드로 · 다시 쓰려면 연결 테스트).
+> **Chainnodes**(`TJ_CHAINNODES_KEY`, 선택 · 무료 Core)를 넣으면 Base 내부 이동 확인에 먼저 써요(순서 Chainnodes → QuickNode → 기본 노드 · 앞 노드가 한도·옛 기록 없음이면 같은 호출 안에서 다음 노드로).
+> **새 선택 키** — `TJ_TRONGRID_KEY`(Tron · 키 없이 초당 0.8회 → 키면 초당 4회 · 하루 공표 한도의 80%) · `TJ_TONCENTER_KEY`(TON · 키 없이 초당 1회 → 키면 초당 8회) — `.env` 에 넣어요
+> (설정 › 연결·키 칸은 아직 없음 · 넣거나 바꾸면 그 체인 수집기와 원장(tj-core)이 알아서 다시 시작) · Sui·Bitcoin 은 키 없이 공개 API 로 받아요.
+> **Alchemy 키**(`TJ_ALCHEMY_KEY`)는 이제 옛 Base 거래의 내부 ETH 이동 보완에도 써요 — 모든 추적 노드가 못 준 1시간 넘은 블록만 · 블록당 1콜(120 CU) · 같은 하루 몫 80% 안 · 실시간 감시엔 안 씀 · 키가 없으면 종전 그대로.
+> **역할별 노드 선택이 기본으로 켜져요** — 실시간은 공개 노드가 먼저이고 느리거나 자주 실패할 때만 무료 키 노드로, 옛 기록 채우기가 2시간 넘게 남으면 키 노드 먼저(키 하루 몫 80% 그대로) ·
+> 종전 고정 순서로 되돌리려면 `config.json` 의 `"backfill": {"node_select": false}`(관측만 함).
+> '내 지갑' 판정을 대사 뒤에 바꾼 적이 있으면 `python3 tools/repair_own_overlap.py`(점검 · 쓰기 0)로 겹친 칸이 있는지 보세요 — 있으면 tj-core 를 멈춘 뒤 `--apply`(원장 백업 뒤 고침 · 두 번 돌려도 같음).
+
+- **Tron · Sui · TON · Bitcoin 지갑(읽기 전용)** — 설정 › 지갑 · 주소 › 지갑 추가의 체인 칩 줄(EVM · Solana | Tron | Sui | TON | Bitcoin)에서 체인을 골라 한 번에 하나씩 넣어요
+  (체인별 주소 형식 검사 · 개인 키·시드 문구는 거부 · 새 체인 지갑은 최대 100개) · 설정 › 추적 지갑 목록에 같은 꼴 줄(이름 바꾸기·빼기) · 체인마다 수집 유닛 하나(`tj-tron`·`tj-sui`·`tj-ton`·`tj-btc`) —
+  받은 거래는 기존 원장·원가·손익 계산에 그대로 들어가요. 확정된 거래만 기장 · 교환처럼 보이는 거래는 손익을 확정하지 않고 검토 줄로(가격 없는 교환 = 원가 넘기기) ·
+  제공자 오류·잘린 응답을 '거래 없음'·'잔고 0'으로 바꾸지 않아요(다음 주기에 다시) ·
+  Tron = TronGrid(TRX·TRC-20·내부 TRX · 수수료는 영수증 값 그대로 · 동결 TRX 는 '보낸 내역') · Sui = 공개 GraphQL(SUI·코인 · 가스 환급·남이 대신 낸 가스 구분 — 낸 쪽 정보가 없으면 보류) ·
+  TON = toncenter v3(TON·제톤 — 주인·마스터가 검증된 제톤 지갑만 · 내 지갑끼리 보낸 TON 은 한 건으로) · Bitcoin = 공개 Esplora(blockstream → mempool.space 자동 전환).
+- **Bitcoin — HD 지갑 · 주소 하나** — HD 지갑은 확장 공개 키 하나(zpub·ypub 는 형식 자동 · xpub 는 주소 형식 칩으로 고름) 또는 공개 디스크립터(pkh · sh(wpkh) · wpkh · 단일 키 tr)로 넣고,
+  받는·잔돈 주소를 이 컴퓨터에서 만들어 갈래마다 gap 20 까지 찾아요(키·디스크립터를 밖으로 보내지 않음) · 주소 하나 모드는 그 주소만(잔돈 주소가 따로 생기는 지갑은 HD 로) ·
+  6 확인 뒤 기장 · 수수료는 내 입력 몫만(내 지갑 여럿이면 입력 금액 비례 · 남의 입력이 섞이면 귀속 미상으로 검토) · 깊은 재편은 그 지갑 숫자를 보류 ·
+  한 제공자가 특정 조회만 계속 실패해도 요청 단위로 세어 예비 제공자로 넘어가요 · 단일 주소와 그 주소를 품은 HD 지갑을 겹쳐 등록하려 하면 같은 BTC 를 두 번 세지 않게 거절해요(아래 알려진 한계).
+- **새 체인 대사(기초 잔고) — 모르면 보류** — 수집 기간 전부터 있던 보유는 한 경계(Bitcoin·Tron = 확정 높이 · Sui = 체크포인트 · TON = 계정 순번)의 잔고로 맞춰요(기존 체인과 같은 대사 규칙) ·
+  아직 못 푼 거래(대기·빈 구간)가 남았거나, 자릿수를 모르는 토큰이 있거나(18자리로 짐작하지 않음), 잔고 칸이 비어 오거나, Sui 코인 합계가 맞지 않거나(첫 대사·새 지갑),
+  TON 대사 조회 중에 새 제톤 지갑이 검증됐거나, 검증된 제톤 지갑이 제공자 목록에서 빠지면 그 체인(새로 넣은 지갑의 대사면 그 지갑) 대사를 보류하고 다음 주기에 다시 해요 —
+  빠진 거래 금액이 기록 없이 기초 잔고로 흡수되거나 창 이전 보유가 덜 잡히지 않게 해요 · Sui 는 지갑마다 따로 맞춰 한 지갑의 보류가 상관없는 다른 지갑을 막지 않아요.
+- **새 체인 시세 · 검색 · 화면** — 네이티브 TRX·SUI·TON·BTC 는 코인게코 시세 · 발행사 공식 스테이블(Tron USD₮ · TON USD₮ · Sui USDC — 계약 주소로만)은 USDT·USDC 로 묶어요(기호만 같은 다른 계약은 따로 · 시세 없음) ·
+  전체 검색·`wallet:` 조건에 새 체인 지갑 이름과 T…·UQ…/EQ…·0:… 주소, 0x 없이 저장된 Tron·Bitcoin 거래 해시, TON 거래 해시가 잡혀요 ·
+  `wallet:` 값은 이제 자르지 않아요(TON 66자·Taproot 62자 주소 · 128자 넘으면 이유와 함께 거절 — 종전엔 60자로 잘려 조건이 무시됐어요) ·
+  입금 주소 줄에 체인 이름 · 보낸 내역 목적지를 '내 지갑'으로 고르면 새 체인 지갑으로 등록 · 새 체인 주소 별명 · 탐색기 링크(거래 · Sui 는 주소도) ·
+  헬스·설정 수집원 칩·수집 한계 표에 새 체인 줄(그 체인 지갑이 있을 때만) · 새 체인 거래는 EVM 브릿지 역추적·솔라나 주소 조회로 보내지 않아요.
+- **TON 거래소 출금 → 내 TON 지갑 도착 연결** — 거래소 출금 기록의 txid 가 내 지갑이 받은 거래의 해시와 같으면(16진·0x·대문자·base64·base64url 표기 차이 무관) 출금과 도착을 이어요 —
+  전송 중에 두 번 보이지 않고 원가가 이어져요(다른 체인의 txid 비교는 그대로).
+- **옛 Base 거래의 내부 ETH 이동 — Alchemy 보완** — 30일 넘은 무거운 거래처럼 모든 추적(trace) 노드가 못 준 옛 거래·블록만 Alchemy 내부 이동 목록(`alchemy_getAssetTransfers`)으로 채워요
+  (1시간 넘은 블록 · 블록당 1콜 120 CU · 하루 몫 80% · trace 와 같은 꼴이라 두 번 안 실림 · 실패한 거래의 이동은 무효로) ·
+  미룬 항목끼리 서로 굶기지 않게 — 블록마다 실제로 실패한 노드를 기억해 안 물어 본 노드부터 · 모두 실패했으면 Alchemy 먼저 · Alchemy 가 실패하면 다음 차례에 추적 노드 하나를 돌아가며 다시 확인(회복한 노드를 다시 씀) ·
+  마감에 걸린 항목 하나가 대기열 전체를 막지 않게 차례를 돌려요 · Alchemy 하루 몫·속도 한도로 못 보낸 차례는 항목을 지우지 않아요 · Alchemy 를 한 번도 못 물어 본 항목은 30일에 지우지 않고 60일까지 기다려요 ·
+  만료로 빼는 항목은 먼저 전체 식별자(체인·지갑·블록·해시·시도 횟수·사유)를 `state/` 보관 파일에 남겨요(쓰기 실패면 빼지 않음).
+- **역할별 노드 선택** — 수집기가 체인·역할(블록 훑기·옛 상태·상세·trace)·노드별로 실제 전송 시간과 실패를 재요(`state/node_stats/` · 서비스 이름만 — 주소·키 없음) ·
+  실시간 = 공개 노드가 먼저 · 공개 노드가 두 창(표본 12개) 연달아 느리거나(상세·옛 상태 10초 · trace 20초 기준) 자주 실패하면(20% 넘게) 그 노드를 뒤로 보내 무료 키 노드(Ankr·NodeReal)가 먼저 ·
+  1분마다 실제 작업 한 번을 그 노드에 맡겨 3번 연달아 괜찮으면 되돌려요 · 옛 기록 채우기 = 예상 남은 시간이 2시간을 넘으면 그 일을 잘하는 키 노드 먼저(공개였다면의 예상이 1시간 아래로 오면 공개로) ·
+  느린 공개 trace 노드는 다른 정상 trace 노드 뒤로 · 키 사용은 그대로 하루 몫 80% 안(넘으면 그 콜은 공개 노드로) · QuickNode·Alchemy 자리는 종전 그대로 ·
+  옛 기록 채우기 알림에 '… · 약 N분 남음 · Ankr로 받는 중'처럼 받는 노드를 보여요 · BNB Chain 은 관측·표시만.
+- **'내 지갑' 재분류 — 보유 이중 계상** — 받는 지갑을 대사(기초 잔고)로 이미 맞춘 뒤 옛 보낸 내역을 '내 지갑'으로 고르면 받은 레그만 더해져 보유가 두 번 세지던 것(예 10 → 20) 고침 —
+  재분류로 다시 기장할 때 그 대사가 흡수한 몫만큼 기초 잔고를 같이 고쳐요(수집기가 다시 기장할 때와 같은 규칙 · 재구축과 같은 값) · LP 관리자 재분류도 같은 길 ·
+  이미 그렇게 기장된 원장은 새 도구 `tools/repair_own_overlap.py` 가 대사 관측 잔고를 기준으로 겹친 칸만 찾아 고쳐요(기본 점검 · `--apply` = 백업 뒤 한 트랜잭션 · 차이가 정확히 설명될 때만 · 멱등).
+- **세일(CCA) 환불 · 수동 연결 참가금** — 전액 환불·미체결 입찰은 '최초 인식 시가' 설정과 상관없이 환불된 결제 코인에 원래 원가를 돌려줘요(종전엔 설정에 따라 원가가 사라짐) ·
+  보낸 내역에서 손으로 '받은 것과 연결'한 세일 참가금도 자동 세일처럼 결제 코인 처분으로 기록해요(대가 = 보낸 때 값 · 첫 연결 토큰을 받은 때 정산 · 같은 스테이블 환불은 쓴 몫만 처분 · 수수료·환불 분리) —
+  다 끝난 왕복의 실현 손익 + 명시된 미상 몫이 달러·원화 현금 변화와 맞아요.
+- **원장 복구 뒤 BNB Chain 다시 점검** — 백업으로 원장을 되돌릴 때 인박스가 백업 시점을 덮지 못해 BNB Chain 을 되감으면, 되감은 시작부터 옛 체크포인트까지를 잔고 감시의 다시 점검 구간으로 저장해요 —
+  옛 기록 차선을 다시 받은 뒤 되돌린 원장 기준으로 다시 따져 백업 뒤에 찾았던 로그 없는 BNB 입금을 정확히 한 번 되찾아요(재시작에도 유지 · 아카이브 없는 설치는 구간 끝 기초 잔고 요청으로 정직하게 마감).
+- **디스크 자동 정리 — 검증된 백업 보존** — 재계산 전 디스크 자동 정리가 백업 계열마다 '복구 검사를 통과한 가장 새 사본'(`ledger_restore check` 와 같은 기준 + 잘림·WAL 머리 검사)을 지키고 그보다 옛 것만 지워요 —
+  종전엔 잘리거나 검사 못 한 최신 사본만 남기고 멀쩡한 옛 사본을 지울 수 있었어요 · 손상·검사 불가인 새 사본은 지우지 않고 보류 · 검증된 사본이 없는 계열은 손대지 않음 · 교체 뒤 정리도 '검사 못 함'을 성공으로 보지 않아요.
+- **옛 보유 토큰 찾기 — 1,000행 넘김** — 이더스캔 계열 `tokentx` 를 1,000행씩 이어 받아요(쌍별 이어 받기 표시 · 끝 블록 고정 · 같은 블록 넘김 · 응답 검사) — 종전엔 무료 키의 1,000행 상한을 목록 끝으로 보고 토큰 많은 지갑의 일부를 놓쳤어요 ·
+  옛 기록은 한 번 다시 훑음 · 일부 출처가 실패해도 앞서 찾은 후보 유지 · 대사 조회 상한 = 후보 상한 · 상한을 넘는 후보는 조용히 버리지 않고 표시.
+- **헬스 주의 — 기준 재정비 · 항목별 닫기** — 주의는 이용자가 할 일이 있거나 돈 숫자가 틀릴 수 있는 것만:
+  시세 없는 실보유(평가 0 으로 총자산에서 빠짐)는 24시간 뒤 자동 접기를 없애고 판정에 상위 10개 미리보기가 아닌 전체 목록·자산 신원을 써요(11번째 새 코인도 잡음) · 값을 아는 거래소 대출 부채는 정상(칩·대시보드 카드) ·
+  자동 회복되는 것은 오래 이어질 때만(위 업데이트 상자) · Rabby 기준 남은 차이 문구 정정(총자산에 빠져 있을 수 있는 몫).
+  이용자가 대응할 수 없는 6종(시세 없는 보유 · 시세 출처 괴리 · 값 모르는 부채 · Rabby 남은 차이 · 잔고 대조 차이 · 미추적 체인 활동)은 줄마다 **닫기** — 코인·지갑·체인 단위로 기억해
+  같은 내용이면 화면·텔레그램·하루 요약 모두 숨기고, 새 코인·지갑·체인이 생기거나 금액이 50% 그리고 $200 넘게 늘거나 오류로 오르면 다시 보여요 · '닫은 주의 N' 에서 되살리기 · 미추적 체인은 옆에 '지갑 추가 ›' ·
+  닫기는 표시만(판정·원장·알림 기록 그대로) · 화면을 연 뒤 새 위험이 생기면 그 닫기는 거절 · 원장·잔고 불일치·음수 보유·재계산 승인·백업·디스크·프로세스는 닫기 없음 ·
+  200자 넘는 긴 항목 신원(긴 Sui 코인 타입 등)은 자르지 않고 전체 해시로 기억해요(앞부분이 같은 다른 코인이 함께 숨지 않게 · 짧은 신원은 종전 그대로).
+- **목록 한 쪽 10/20개** — 쪽으로 넘기는 모든 목록·검색 결과·시트의 한 쪽을 기기마다 고를 수 있어요(설정 › 화면 '목록 한 쪽' · 기본 10 · 바꾸면 첫 쪽) ·
+  Solana 수집기가 시작할 때 끝났거나 버려진 진행 표식을 지우고 기록 넓히기 뒤 '서명 받는 중' 표식을 남기지 않아요(오래 멈춘 것처럼 보이던 것 · 표시 전용).
+- **목록 '모두 보기' 없앰** — 쪽으로 넘기는 긴 목록(보유 코인 · 보관처 · 사이클 · 전체 이벤트 · 그날의 기록 · 보낸 내역 · 미매칭 · 추적 지갑 · NFT · 값 없는 토큰 · 설정 › 체인별 조회 등)은
+  처음부터 설정 '목록 한 쪽'(10/20)만큼 보이고 바로 아래 '‹ 이전 · 1–10 / N · 다음 ›'예요 — 처음 몇 개 → 'N개 모두 보기' → 쪽 넘김 · 접기 단계가 없어졌어요 ·
+  한 쪽에 다 들어가면 바가 없어요 · 접힌 꼬리를 설명하던 요약 줄(보유 '나머지 N종 · 합계' · 보관처 '외 N곳 · 합' 등)도 없어졌어요 ·
+  목록마다 따로 정했던 한 쪽 크기(8·12·14개 등) 대신 설정 값 그대로(20 이면 그 목록들도 20개씩) · 찾아가기·필터를 바꾸면 첫 쪽·쪽을 넘기면 목록 맨 위는 그대로 ·
+  대시보드 LP·레버리지 카드의 '앞 2줄 + N개 더'는 짧은 미리보기라 그대로예요.
+- **QuickNode — 선택 칸 · 계속 거부되면 자동 복귀** — 상시 무료 플랜이 없어(1개월 체험 크레딧 1,000만·초당 15 → 유료) 선택 칸으로 바로잡았어요(필수 표시 없음 · 요금제 칩 '1개월 체험') ·
+  키가 계속 거부되면(401·402·403·404 또는 크레딧·체험 끝 응답이 성공 없이 3번 · 2분 넘게) 그 체인에서 QuickNode 를 빼고 기본 노드로 돌아가요(설정 칸에 '키 거부됨' 줄 · 그 체인 유닛만 재시작) ·
+  성공 1번 · 연결 테스트 통과 · 키 바꿈이면 다시 써요 · 429·시간 초과·5xx 는 거부로 안 셈.
+- **Chainnodes — Base trace** — 새 선택 키 `TJ_CHAINNODES_KEY`(무료 Core 월 1,250만 요청 · 키 = 8-4-4-4-12 · Base 주소를 붙여 넣으면 키만 저장)를 Base 내부 이동 확인(trace)에만 써요(로그·잔고엔 안 씀) ·
+  Base trace 순서 = 내 `trace_rpcs` → Chainnodes → QuickNode → 기본 노드 · 한도(-32005·429 — 알려 준 쉼 시간 존중)거나 그 제공자 이력 밖이면 같은 호출 안에서 다음 노드로(거래 실패로 안 봄) ·
+  월 한도의 80% · 연결 시험 = 공개 최근 거래 1건 trace(내 지갑·거래 안 보냄). QuickNode 만 있을 때도 이제 QuickNode → 기본 노드(지난 판 '그 키 하나로 기다림' 한계 고침).
+- **응답 본문 대기 상한** — 응답 본문을 읽을 때마다 다시 요청별 대기 시간(그것과 절대 마감 중 짧은 쪽)을 걸어, 헤더만 보내고 멈춘 노드가 요청과 호스트 자리를 120초 절대 상한까지 붙잡지 않아요.
+- **같은 블록 안 거래 순서** — 같은 블록에서 매수 뒤 매도하면 화면 재생이 거래 해시 순으로 돌아 실현손익·남은 원가가 틀릴 수 있던 것 고침
+  (예 $100 에 산 100개를 가진 채 같은 블록에서 100개를 $300 에 더 사고 100개를 $400 에 팔면 실현손익 $200 · 남은 원가 $200 이 맞는데 $300 · $300 으로 보임 — 보유 수량은 맞아서 잔고 대조로는 안 드러남) —
+  수집기가 RPC·이더스캔·BNB Chain 응답의 거래 순번(트랜잭션 인덱스)과 로그 번호를 저장해 같은 블록 안에서도 실제 순서로 재생해요(순번 0 도 그대로 · 없거나 잘못된 값은 넣지 않음) ·
+  **업데이트 뒤 새로 받는 거래부터**예요 — 이미 저장된 거래는 종전 순서 그대로이고 다시 받아도 원장이 바뀌지 않아요(자동 고침 없음 · 아래 알려진 한계).
+- **새 체인 '거래 상세 누락' 주의 · 키 바꾸면 원장도 다시 시작** — Tron·Sui·TON·Bitcoin 수집이 재시도 상한 뒤에도 거래 상세를 못 받은 거래가 있으면
+  상태 패널에 그 체인 주의(원장 계열 · 닫기 없음)와 09시 요약 줄이 떠요 — 그동안 그 체인 기초 잔고 대사는 보류돼요(종전엔 대사만 조용히 보류되고 아무 표시가 없었어요 · 다 받으면 주의도 사라짐) ·
+  새 체인 키(`TJ_TRONGRID_KEY`·`TJ_TONCENTER_KEY`)나 체인 설정(`nonevm.<체인>` 제공자)을 바꾸면 그 체인 수집기와 함께 원장(tj-core)도 다시 시작해 대사가 새 키·제공자로 해요
+  (종전엔 수집기만 다시 시작해 원장은 옛 값으로 대사 실패를 이어 갔어요 · 새 체인 지갑이 없는 설치는 종전 그대로 — 업데이트만으로 원장이 다시 시작하지 않음).
+- **영수증 차트 색 통일** — 매수 점을 올릴 수 없는 영수증(원가를 입금으로 이어받은 세일 토큰 등)의 '매도만 차트'가 옛 노란색으로 그려지던 것 →
+  매수+매도 차트와 같은 색(내 매도·평균 매도선 = 상승색 · 촛대 흐리게 · 범례도 같은 색).
+
+**함께**
+
+- **문서** — README '이번 판'·키 표(Chainnodes·TronGrid·toncenter · QuickNode 1개월 체험 · Alchemy 줄에 Base 보완)·기능 요약(새 체인)·유닛 표(새 유닛 4개)·재구축 디스크 정리 문단·English ·
+  [API_KEYS.md](docs/API_KEYS.md) QuickNode 선택(1개월 체험)·Chainnodes·TronGrid·toncenter·Alchemy Base 보완 ·
+  [COLLECTION_LIMITS.md](docs/COLLECTION_LIMITS.md) Base 줄(Alchemy 보완)·새 [Tron · Sui · TON · Bitcoin](docs/COLLECTION_LIMITS.md#tron--sui--ton--bitcoin) 절 · 설정 › 수집 한계 표 새 체인 줄 ·
+  `.env.example` QuickNode 문구·Chainnodes·TronGrid·toncenter 칸.
+- **도구** — `tools/repair_own_overlap.py`('내 지갑' 재분류 보유 중복 점검·복구) · `tools/ledger_restore.py`·원장 백업이 새 체인 수집 상태를 함께 다뤄요.
+- **시험** — 공개 시험 추가: '내 지갑' 재분류 앵커·복구 도구 · 세일 정산·수동 참가금 처분 · BNB Chain 복구 뒤 다시 점검 · 디스크 정리 보호본 · 옛 보유 토큰 찾기 넘김 · 헬스 닫기·기준·긴 신원 ·
+  Solana 진행 표식 정리 · QuickNode 선택·거부 복귀 · Chainnodes · 응답 본문 대기 · 새 체인 4개 수집기(합성 TronGrid·Sui GraphQL·toncenter·Esplora 서버 — 외부망 없이) · 주소 코덱·Bitcoin 파생 공식 벡터 ·
+  새 체인 대사 보류·등록·복원·화면·검색 · TON 출금 도착 · Base Alchemy 보완·공정성 · 노드 선택 · 검색 긴 `wallet:` ·
+  같은 블록 안 거래 순서(수집기 → 원장 → 화면 재생) · 새 체인 거래 상세 누락 주의 · 원장 다시 시작 지문 · 목록 바로 쪽 넘김 — 전체 7,500건 넘게(파일 226개).
+
+**English · Tron, Sui, TON and Bitcoin wallets, external review fixes, dismissible warnings, node selection, Chainnodes** — This release combines two unpublished steps.
+First, a full external review of the previous release found new bugs; every one was reproduced as a public test (failing before, passing after) and fixed. Marking an old outflow as "own wallet" after the
+receiving wallet was already reconciled no longer double-counts the received amount (re-derivation offsets the reconciliation anchor); `tools/repair_own_overlap.py` detects and fixes ledgers already affected
+(dry-run by default, idempotent). A fully refunded / zero-fill CCA bid restores the payment coin's original cost regardless of the first-seen-price setting, and manually linked sale payments are booked as disposals
+of the paid coin. Ledger restore with a BNB Chain rewind stores a durable recheck range. Pre-rebuild disk relief keeps the newest backup copy that passes a restore check. Token discovery pages Etherscan-like
+`tokentx` at 1,000 rows. Health warnings can be dismissed per item (shown again on a new coin/wallet/chain, a large increase or escalation; identities longer than 200 characters use a full-hash ID); lists page
+10 or 20 rows per device and open on the first page right away (no 'show all' step). QuickNode is an optional key for a paid plan or the 1-month free trial and is dropped per chain while it keeps being refused; a new optional free Chainnodes key (`TJ_CHAINNODES_KEY`)
+is tried first for Base internal-transfer traces. Response bodies are bounded by the per-request idle timeout on every read.
+Second, read-only wallets on **Tron** (TronGrid), **Sui** (public GraphQL), **TON** (toncenter v3) and **Bitcoin** (public Esplora with failover — a single address, or a watch-only HD wallet from an
+xpub/ypub/zpub or a public descriptor with receive and change branches scanned to gap 20; keys never leave the machine; 6 confirmations) are added from Settings › wallets. Each chain has its own unit
+(`tj-tron`, `tj-sui`, `tj-ton`, `tj-btc`) that waits while that chain has no wallet. Their reconciliation holds instead of guessing (unresolved gaps, unknown decimals, empty balance fields, Sui sum mismatches,
+TON jetton-wallet changes during a query); official Tron/TON USD₮ and Sui USDC are priced as stablecoins; search finds new-chain wallet names, addresses and hashes, and `wallet:` values are no longer
+truncated (rejected above 128 characters). A TON exchange withdrawal is linked to its arrival when the exchange txid is the receiving transaction's hash. On Base, internal ETH transfers of old transactions
+that every trace node fails to return are filled from Alchemy's internal-transfer list (one 120-CU call per block, blocks older than 1 hour, inside the 80% daily share), with fair retry ordering and the full
+identifiers archived before an item expires. Collectors measure RPC nodes per chain and role and pick by speed (public nodes first in real time, with hysteresis; key nodes first when the backfill ETA exceeds
+2 hours; `backfill.node_select: false` restores the fixed order), and the backfill banner shows the serving node. New optional keys: `TJ_TRONGRID_KEY`, `TJ_TONCENTER_KEY` (Sui and Bitcoin need none).
+Finally, a review of everyday flows found that a buy and a sell in the same block could replay in hash order (wrong realized P&L and remaining cost); the RPC,
+Etherscan and BNB Chain collectors now keep the transaction index and log index — for transactions collected after the update (stored ones keep their old order).
+A new-chain transaction whose details still cannot be fetched after the retry limit now raises a health warning (that chain's reconciliation is held meanwhile),
+and changing a new-chain key or provider restarts tj-core together with the collector.
+No rebuild and no data revision; stop everything and run `pm2 start ecosystem.config.js` so the four new units are added.
+
+**알려진 한계(다음 판에)** — 새 체인의 범위·못 받는 것은 [수집 한계 › Tron · Sui · TON · Bitcoin](docs/COLLECTION_LIMITS.md#tron--sui--ton--bitcoin), 그 밖 자세한 설명·피하는 법은 README [알아 둘 것](README.md#알아-둘-것).
+
+- **Bitcoin 은 처음부터 단일 주소 또는 HD 지갑 하나로 등록하세요** — 같은 지갑을 그대로 지웠다 다시 넣는 건 되지만, 이미 기록한 단일 주소를 HD 지갑으로(또는 HD 지갑을 단일 주소로) 바꾸는 이전은 지원하지 않아요
+  (지워도 원장 기록이 남아 같은 BTC 를 두 번 세요) · HD 지갑에 들어가는 주소를 따로 등록하지 마세요(등록 검사는 지금 찾는 범위(gap) 안의 주소만 막아요) ·
+  설정 파일 직접 편집·백업 복원으로 생긴 겹침과 HD 지갑 두 개의 겹침은 등록 검사 밖이에요 · 한 제공자가 확정 높이 블록만 계속 '없음(404)'으로 주면 BTC 수집이 멈춘 채 기다려요(`nonevm.btc.esplora` 로 다른 제공자를 고르면 회복).
+- **옛 Base 내부 이동** — 30일 넘게(실제로 5번 넘게 다시 해 본 뒤) 못 푼 옛 내부 이동은 자동으로 되살리지 않아요(Alchemy 를 물어 본 항목은 그 뒤 한 번 실패해도 만료되면 빠져요) —
+  지우기 전에 전체 식별자를 `state/leaf_later_unresolved_<체인>.jsonl`·`state/trace_later_unresolved_<체인>.jsonl` 에 남길 뿐 다시 넣는 도구는 아직 없어요(이 판 전에 이미 빠진 항목은 기록도 없음) ·
+  '회복한 추적 노드 다시 확인'은 블록 단위 대기열에만 있고 거래별 늦은 채움엔 없어요 · 대기열이 넘침 파일을 오가면 단계 기록이 사라져 몇 차례 늦어질 수 있어요 ·
+  Alchemy 목록은 성공한 거래 안에서 일부만 되돌려진 호출(try/catch) 아래 이동을 가리지 못해요(드묾 — 잔고 대조가 차이를 드러내요).
+- **Sui** — 한 지갑의 코인 합계 불일치(코인 + 주소 잔고 ≠ 총잔고)가 계속되면 그 지갑(체인 첫 대사면 Sui 전체)의 첫 대사가 보류된 채로 있어요(일시적이면 회복 뒤 진행) ·
+  자릿수 정보가 없는 코인이 든 거래는 보류되고, 오래가면 그 지갑 대사도 보류돼요 · 스테이킹·DeFi 포지션 객체는 잔고에 안 잡혀요([수집 한계](docs/COLLECTION_LIMITS.md#tron--sui--ton--bitcoin)).
+- **TON** — 거래소 출금 자동 연결은 거래소가 준 txid 가 **내 지갑이 받은 거래의 해시와 같을 때만**이에요 — 보낸 쪽 거래나 메시지 해시를 주는 거래소면 전송 중 동안 두 번 보이고(도착 뒤 사라짐) 원가가 이어지지 않아요
+  (수동 원가 입력으로도 이중 표시는 안 풀려요) · 쓰는 거래소의 끝난 출금 기록 txid 를 내 지갑이 받은 거래 해시와 한 번 비교해 보세요 · 제톤 출금 연결은 따로 확인하지 않았어요 ·
+  검증된 제톤 지갑이 제공자 목록에서 계속 빠지면 그 지갑 대사가 보류된 채로 · 조회 중 새 제톤 지갑 검증이 이어지면 첫 대사가 늦어져요 · 스왑은 확정하지 않아요(보낸 TON = 보낸 내역 · 받은 제톤 = 검토 유입) ·
+  자릿수를 알 수 없는 스팸 제톤을 들고 있으면 TON 대사가 보류돼 TON 잔고가 늦게·작게 보일 수 있어요 · TON 시세는 바이낸스 TONUSDT 거래 정지로 0 으로 보일 수 있어요(다음 판).
+- **Tron** — 동결(Stake 2.0)·해제 대기 TRX 는 유동 보유에서 빠지고 '보낸 내역'(실현 아님)으로 보여요(보유는 기타 자산으로) ·
+  대사 때 `balanceOf` 를 거부한 토큰과, 잔고 있는 토큰이 30개를 넘을 때 그 밖 토큰은 '관측 못 함'으로 빼고 대사를 끝내 기초 잔고가 안 잡힐 수 있어요(다음 주기에 나머지를 이어 묻지 않음) —
+  토큰이 많은 Tron 지갑은 보유 표와 지갑 앱 잔고를 한 번 비교해 보세요.
+- **새 체인 공통** — 그 체인 수집이 아직 못 푼 거래(대기·빈 구간)를 남긴 동안에는 관련 지갑을 지우지 마세요(함께 걸린 다른 내 지갑이 그 거래를 기록 없이 기초 잔고로 흡수할 수 있어요 — 수량은 맞고 거래 내역·원가 근거가 빠짐) ·
+  TronGrid·toncenter 키는 아직 `.env` 로만 · 설정 목록의 새 체인 지갑 이름 바꾸기는 브라우저 기본 입력 창 · 스팸 토큰을 원장 숨김으로 잇지 않아요(가치 없음 · 검토 줄에 보일 수 있음) ·
+  네이티브·공식 스테이블 밖 새 체인 토큰은 DEX 시세 연결이 아직 없어요 · 거래소 자산 'TON' 이 다른 코인이면 네이티브 TON 과 같은 이름으로 묶일 수 있어요 ·
+  Bitcoin HD 지갑의 파생 주소로는 검색이 안 돼요 · 키 없는 공용 경로는 옛 기록이 느려요(Tron 시간당 거래 약 1,400건) ·
+  TON 제공자가 응답을 끝없이 늦추거나 BTC·Sui 제공자가 고장 응답(같은 쪽 되풀이 · 지나치게 큰 응답)을 반복하면 그 체인 수집이 멈출 수 있어요(다음 판).
+- **노드 선택** — 판정 기준(역할별 시간·실패율·창 크기·2시간)은 첫 값이에요(`backfill.node_slo_sec`·`backfill.bf_target_sec` 로 바꿈) · 관측은 프로세스 메모리라 재시작하면 표본이 다시 찰 때까지 종전 순서 ·
+  옛 기록 채우기 예상 시간은 단일 평균이라 병목이 블록 훑기·trace 여도 상세·옛 상태를 키 노드로 옮길 수 있어요(하루 몫 80% 안) · 최신 블록 훑기(getLogs)의 공개↔키 전환과 BNB Chain 상세·아카이브 노드 선택은 아직 없어요.
+- '내 지갑' 복구 도구는 차이가 대사 전 '내 지갑' 받은 몫과 정확히 같을 때만 고쳐요 — 판정을 여러 번 바꿔 일부만 대사 전에 재분류됐거나 나중 기초 잔고가 대사 전 자리에 생긴 칸은 목록만(직접 확인) · Solana 재분류는 도구 대상 밖(재발 방지는 Solana 도 적용).
+- 세일 환불을 네이티브·비스테이블 코인으로 받은 것은 아직 연결 못 하고, 여러 지급 코인과 환불이 섞인 목적지는 처분을 보류해요(보류 사유는 화면에 아직 안 보임) ·
+  수동 연결 참가금의 처분 날짜는 첫 토큰 수령일, 원화 환율은 보낸 때예요(자동 세일은 확정 시각 환율).
+- 원장 복구 뒤 다시 점검 구간보다 앞 블록에서(백업 뒤 끝난 긴 복구·30일 지난 누락 탐색) 찾았던 입금은 범위 밖이에요(`ledger_restore --margin-hours` 로 넓힘) ·
+  이 판 전에 이미 되감기 복구를 한 설치는 `state/bsc_balw_recheck.json` 에 `{"since": <백업 시각>}` 으로 다시 점검을 요청하세요(그 지갑 작업이 계속 있으면 늦게 시작).
+- 손상·검사 불가로 판정된 새 백업은 자동으로 지우지 않아 그 공간이 꼭 필요하면 재계산이 '디스크 부족'으로 멈춘 채 정리를 기다려요 · WAL 중간 프레임 손상은 가려내지 못해요 ·
+  이미 지워진 옛 백업은 되살릴 수 없어요 — 지금 정상 원장으로 새 백업(`tools/offsite_backup.py` · 일일 백업)을 만들어 두세요.
+- 옛 보유 토큰 찾기 후보가 지갑당 3,000개를 넘으면 넘은 것은 표시만 하고 조회하지 않아요 · 한 블록에 1만 행 넘게 받은 지갑은 그 블록 나머지가 미확인 · 대사 뒤 새로 찾은 토큰은 기초 잔고를 자동으로 잡지 않아요(잔고 대조·음수 안전망이 받침).
+- 헬스 닫기: 알림 수준을 '주의'로 낮춘 설치는 닫기 직전 대기열에 들어간 주의 알림이 한 번 나갈 수 있어요 · 값 모르는 부채는 금액 없이 기억해 수량이 늘어도 다시 안 보여요(새 거래소·코인이면 보임) ·
+  닫은 기록은 만료 없이 되살리기로만 지우고 설정 백업·복원에 안 들어가요 · 줄어드는 금액은 다시 띄우지 않아요.
+- 같은 블록 안 거래 순서는 업데이트 뒤 새로 받는 거래부터예요 — 이미 저장된 같은 블록 매수·매도(RPC·이더스캔·BNB Chain 으로 받은 것)는 종전 순서로 재생돼
+  실현손익·남은 원가가 어긋난 채로 남을 수 있어요(보유 수량은 맞음 · 자동 고침 없음 · 블록스카웃 상세로 받은 거래는 원래 순번이 있어 해당 없음).
+- 빗썸 지정가 주문이 일부만 체결된 채 열려 있다가 취소되면, 잠깐(다음 대사까지 — 기본 조회 간격이면 약 20분) 그 코인 보유가 실제보다 많게 보일 수 있어요 — 저절로 맞춰져요.
+- 원장 복원 도구(`tools/ledger_restore.py`)로 백업 이후 새 코인이 생긴 원장을 되돌리면, 손으로 넣은 코인별 원가(수동 원가)가 다른 코인에 붙을 수 있어요 — 복원 뒤 설정의 수동 원가를 다시 확인하세요 ·
+  이 도구가 찍는 pm2 멈추기·켜기 안내엔 새 체인 유닛(`tj-tron`·`tj-sui`·`tj-ton`·`tj-btc`)이 빠져 있어요 — README [백업 · 복구](README.md#백업--복구)의 명령을 쓰세요(다음 판).
+- QuickNode 체험 끝·크레딧 소진의 실제 응답 꼴은 실측하지 못해 HTTP 401·402·403·404 와 문구로 판정해요(다른 꼴이면 일시 실패로 재시도) · 같은 키를 유료로 바꿨으면 연결 테스트를 눌러야 다시 써요 ·
+  호출이 드문 설치는 거부 판정까지 수십 분 걸릴 수 있어요(그동안 trace 는 다음 노드) · Chainnodes 키 거부는 자동으로 빼지 않아 trace 마다 1콜씩 버려요 · Chainnodes 냉각은 프로세스마다 따로예요.
+- 지난 판 한계(업비트 3주문 이상 부분 상쇄 · BNB Chain 제3자 내부 입금 겹침 · 아카이브 키가 쉬는 날 옛 구간 채우기 · 창 넓힘 재구축 · CCA 처분 시각 · 도중 디스크 가득 · HyperEVM 이더스캔 의존 등)는 그대로예요 —
+  [2026-10-11 (2)](#2026-10-11-2--외부-검토-2건-버그-수정--quicknode-trace--hyperevm) · 그중 'QuickNode 키면 Base trace 는 그 키 하나'와 '수동 연결 참가금 처분 없음'은 이번에 고쳤어요.
+
 ## 2026-10-11 (2) — 외부 검토 2건 버그 수정 · QuickNode trace · HyperEVM
 
 **업비트 같은 코인 사고팔기 부분 체결 · BNB Chain 같은 블록 입금·긴 공백 복구·지난 누락 복구 차례 · 늦게 온 옛 거래 → 기초 잔고 바로 보정 · 기초 잔고 보정 → 지난 곡선 ·

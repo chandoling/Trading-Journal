@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 from decimal import Decimal, InvalidOperation
 
+import chain_registry
 import netpace
 
 TR = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
@@ -573,6 +574,8 @@ def candidates(rows, cache, explained=frozenset(), stable_gids=frozenset(), now=
         loc = r["location"] or ""
         if not loc.startswith("wallet:"):
             continue
+        if chain_registry.is_nonevm(r["source_ns"]):
+            continue
         txh = r["source_id"] or ""
         if txh in explained or txh.lower() in explained:
             continue
@@ -665,6 +668,8 @@ def send_candidates(rows, cache, seed, now=None):
         loc = r["location"] or ""
         dest = loc.split(":", 2)[2] if loc.startswith("out:") and loc.count(":") >= 2 else None
         if not (r["leg_kind"] == "move_in" and dest and norm(dest) in known):
+            continue
+        if chain_registry.is_nonevm(r["source_ns"]):
             continue
         k = f"S|{r['source_ns']}|{norm(r['source_id'])}"
         if k in seen:
