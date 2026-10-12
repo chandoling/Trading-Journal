@@ -73,8 +73,8 @@
 | ![변동 분해 시트 — 전일 대비 줄을 누르면 무엇 때문인지 · 금액은 랜덤값](docs/screenshots/62_change_breakdown_sheet.png)<br><sub>금액은 랜덤값</sub> | ![수집 한계 — 거래소·체인별로 받는 범위와 못 받는 것(긴 이유는 접힘)](docs/screenshots/63_settings_collection_limits.png) |
 | ![체인별 조회 — 체인마다 조회 켜기·끄기 스위치, 보낸 거래가 지갑마다 10번 이하면 '끄는 걸 추천해요', 지갑 수에 맞춘 확인 주기·하루 예상 호출·꺼 둔 체인](docs/screenshots/48_settings_chains.png) | |
 
-이번 판(2026-10-12 (3) · 화면 다듬기 · 외부 검수 작은 수정 · AI 리뷰 전체 채우기)에 더해진 것 — 자세한 설명은 [CHANGELOG.md › 2026-10-12 (3)](CHANGELOG.md#2026-10-12-3--화면-다듬기--외부-검수-작은-수정--ai-리뷰-전체-채우기) 에 있어요.
-사진은 모두 이번 판 화면으로 새로 찍었어요(금액 랜덤값 모드 · 가짜 주소).
+이번 판(2026-10-12 (4) · 가스(매매 외) 줄 · 매매 가스·수수료 참고 줄)에 더해진 것 — 자세한 설명은 [CHANGELOG.md › 2026-10-12 (4)](CHANGELOG.md#2026-10-12-4--가스매매-외-줄--매매-가스수수료-참고-줄) 에 있어요.
+사진은 모두 지난 판(2026-10-12 (3)) 화면으로 찍었어요(금액 랜덤값 모드 · 가짜 주소) — 이번 판에 바뀐 가스 줄·참고 줄은 사진에 없어요.
 
 최근 판에 더해진 것(이 README 다른 곳에 없는 것만):
 
@@ -91,14 +91,13 @@
 - **환율·업비트 늦음 표시** — 환율이 대체값·오래된 값이면 상태줄·설정 환율 줄에 '환율 대체값'·'환율 오래됨'(대체값이면 김프 숨김) · 업비트 잔고가 10분 넘게 늦으면 원화 줄에 'N분 전'.
 
 
-- **업데이트** — [업데이트](#업데이트) 순서대로(전부 멈춘 뒤 한꺼번에 시작 → 끝에 `pm2 save`) · 재구축·데이터 개정 없음 · 첫 기동 때 `state/`·`state/inbox/` 는 본인만(0700), `.env` 는 0600 으로 조여져요
-  (다른 사용자 계정으로 이 폴더를 읽던 도구가 있으면 봇과 같은 사용자로) — [CHANGELOG › 2026-10-12 (3)](CHANGELOG.md#2026-10-12-3--화면-다듬기--외부-검수-작은-수정--ai-리뷰-전체-채우기) 업데이트 상자 ·
-  2026-10-12 (2) 전 판에서 바로 올라오면 [그 판 업데이트 상자](CHANGELOG.md#2026-10-12-2--외부-검토-2건-버그-수정--톤코인-gram-개명--영수증-차트-봉-미리-받기)(`pm2 save` · 새 체인 유닛)도 보세요.
-- **화면** — 글꼴·색·제목 통일(금액·%·개수 = 고정폭 숫자 · 한글 문장 = 본문 글꼴) · 긴 설명 → 한 줄 + '자세히'(설정 키 칸 [필수|선택]·[무료 …] 알약 · 노드 몫 막대 · 수집 한계 긴 이유 접힘) ·
-  설정 아래쪽 줄을 누르면 화면이 위로 튀던 것.
-- **과거 데이터 · AI 리뷰** — [과거 데이터 더 가져오기](#백필--재구축--재백필)에 거래소 보존 한도 경고 · 설정 › AI 리뷰 '전체 채우기'([AI 기능 켜기](#ai-기능-켜기--claude-cli-로그인)).
-- **외부 검수 작은 수정** — 영수증 AI 자동 평가(미룬 차트에선 거절 · 바뀐 보기로 재시도 안 함) · 인증 요청 리다이렉트 안 따라감 · 데이터 폴더·`.env` 권한 보정 ·
-  미리 받기 오늘 영수증·`bg=1` 직접 요청(지난 판 알려진 한계) · 꺼 둔 체인 로그 · Base 공개 노드 기본 속도.
+- **업데이트** — 웹 화면만 바뀌어요: 백업 확인 → `git pull` → `pm2 restart tj-web` · 재구축·데이터 개정 없음 ·
+  2026-10-12 (3) 보다 전 판에서 바로 올라오면 [업데이트](#업데이트) 순서대로 전부(끝에 `pm2 save`)와 [그 판 업데이트 상자](CHANGELOG.md#2026-10-12-3--화면-다듬기--외부-검수-작은-수정--ai-리뷰-전체-채우기)(`state/`·`state/inbox/` 0700 · `.env` 0600)도 보세요.
+- **가스 줄** — 변동 분해 '현물 실현' 시트·그날 카드의 가스 줄 이름 = '가스(매매 외)'(실패·승인·전송·브릿지·LP) · 시트에선 바로 아래 흐린 참고 줄 '참고 · 매매 가스·수수료'
+  ([원가·손익에 포함] 칩 — 산 쪽은 원가, 판 쪽은 손익에 이미 들어 있음 · 합에 안 들어감 · 그날 가스·수수료 전부 − 매매 외 가스 — '전부' = 가스·수수료 탭과 같은 재료의 그날 합) · 가스 반영을 끄면 참고 줄 없음 · 표시 전용 — 실현·원가·명세 그대로.
+- 지난 판(2026-10-12 (3)): 화면 다듬기(글꼴·색·제목 통일 · 긴 설명 → 한 줄 + '자세히' · 설정 아래쪽 줄을 누르면 위로 튀던 것) · [과거 데이터 더 가져오기](#백필--재구축--재백필) 거래소 보존 한도 경고 ·
+  AI 리뷰 '전체 채우기' · 영수증 AI 자동 평가 · 인증 요청 리다이렉트 안 따라감 · 데이터 폴더·`.env` 권한 보정 · 미리 받기 오늘 영수증·`bg=1` · 꺼 둔 체인 로그 · Base 공개 노드 기본 속도 —
+  [CHANGELOG.md › 2026-10-12 (3)](CHANGELOG.md#2026-10-12-3--화면-다듬기--외부-검수-작은-수정--ai-리뷰-전체-채우기)
 - 지난 판(2026-10-12 (2)): TON 스팸 제톤·첫 대사 중 입금 · 톤코인 GRAM 개명 · 새 체인 못 받은 거래 6시간마다 · 대사 보류·수집 유닛 없음 주의 · 긴 Transfer 로그 ·
   자동으로 끈 체인 새 자금 경고 · 보유 줄 단위 쪽 넘김 · 코인게코 옛 값 · 백업 `chain_wallets` · 영수증 차트 봉 미리 받기 — [CHANGELOG.md › 2026-10-12 (2)](CHANGELOG.md#2026-10-12-2--외부-검토-2건-버그-수정--톤코인-gram-개명--영수증-차트-봉-미리-받기)
 - 지난 판(2026-10-12): Tron · Sui · TON · Bitcoin 지갑(읽기 전용) · 새 체인 대사는 모르면 보류 · '내 지갑' 재분류 이중 계상 · 세일 환불 원가·수동 참가금 처분 · 원장 복구 뒤 BNB Chain 다시 점검 ·
@@ -1025,7 +1024,8 @@ tracking and a review queue for unknown-cost inflows and spam tokens. The UI is 
 - **Borrowed coins:** `loan_short` in `config.json` — confirmed exchange-loan periods only, e.g. (synthetic) `[{"exchange": "okx", "asset": "ETH", "from": "YYYY-MM-DD", "to": "YYYY-MM-DD"}]` —
   gives coins borrowed and withdrawn (exchange balance pushed below zero, later refilled on the same exchange) a cost at the borrow-time price; the difference on refill is realized
   (a "대출 상환" row in the statement; display calculation only, with first-seen pricing on — the default; empty = off).
-- **Release notes:** what changed in each release (a screen polish pass — one number font, unified titles and colors, long explanations folded into one line
+- **Release notes:** what changed in each release (the spot-realized gas line renamed "가스(매매 외)" (gas, non-trading) with a dimmed reference line below it
+  for the day's trading gas and fees, already in cost basis (buys) or PnL (sells) and outside the sum — display only, `pm2 restart tj-web` after `git pull`, screenshots are from 2026-10-12 (3) — on 2026-10-12 (4); a screen polish pass — one number font, unified titles and colors, long explanations folded into one line
   plus "자세히", no jump-to-top when tapping lower settings rows —, an exchange-retention warning when fetching older history, an AI review "fill all" button and small
   external-review fixes — deferred receipt evaluations, no redirects on authenticated requests, tightened `state/` and `.env` permissions, prefetch of today's receipts
   and `bg=1` limited to internal requests — on 2026-10-12 (3); fixes from two independent external reviews — TON spam jettons no longer holding the whole

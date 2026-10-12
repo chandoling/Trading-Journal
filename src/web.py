@@ -4734,9 +4734,18 @@ class StateBuilder:
                 v9 = kst_fm[k9] = datetime.fromtimestamp(ts9, KST).strftime(fmt9)
             return v9
 
+        fee_day = {}
+
+        def fee_day_add(usd9, ts9):
+            if usd9 > 0:
+                d9 = fee_day.setdefault(kst_fmt(ts9, "%Y-%m-%d"), [Decimal(0), 0.0])
+                d9[0] += usd9
+                d9[1] += float(usd9) * fxb.rate_at(ts9)
+
         def ex_fee_add(ex9, usd9, ts9):
             if usd9 <= 0:
                 return
+            fee_day_add(usd9, ts9)
             a9 = ex_fee.setdefault(ex9, {"usd": Decimal(0), "tx": 0})
             a9["usd"] += usd9
             a9["tx"] += 1
@@ -4748,6 +4757,7 @@ class StateBuilder:
         def wd_fee_add(ex9, usd9, ts9):
             if usd9 <= 0:
                 return
+            fee_day_add(usd9, ts9)
             for a9 in (wd_fee.setdefault(ex9, {"usd": Decimal(0), "tx": 0}),
                        wd_fee_m.setdefault(kst_fmt(ts9, "%Y-%m"), {}).setdefault(ex9, {"usd": Decimal(0), "tx": 0})):
                 a9["usd"] += usd9
@@ -6088,6 +6098,7 @@ class StateBuilder:
         def br_fee_add(chain9, usd9, ts9):
             if usd9 <= 0:
                 return
+            fee_day_add(usd9, ts9)
             for a9 in (gas_by_chain.setdefault(chain9, {"usd": Decimal(0), "tx": 0}),
                        gas_by_month.setdefault(kst_fmt(ts9, "%Y-%m"), {}).setdefault(chain9, {"usd": Decimal(0), "tx": 0})):
                 a9["usd"] += usd9
@@ -8215,6 +8226,7 @@ class StateBuilder:
                     chain, {"usd": Decimal(0), "tx": 0})
                 mi9["usd"] += usd
                 mi9["tx"] += 1
+                fee_day_add(usd, ts)
                 ent2 = tx_group.get((r["source_ns"], txh))
                 if ent2 is not None and ent2[0] in G:
                     g2 = G[ent2[0]]
@@ -12583,6 +12595,7 @@ class StateBuilder:
                               for e9, v9 in sorted((wd_fee_m.get(m) or {}).items(), key=lambda kv: -kv[1]["usd"])]
                            for m in sorted(set(gas_by_month) | set(ex_fee_m) | set(wd_fee_m)) for mm in [gas_by_month.get(m) or {}]},
             "taxGas": tax_gas,
+            "feeAllByDate": {k9: [_f(v9[0], 2), round(v9[1])] for k9, v9 in sorted(fee_day.items()) if v9[0] >= Decimal("0.005")},
             "gasExpenseByDate": {k9: [_f(v9[0], 2), v9[1],
                                       {kk9: {"usd": _f(x9[0], 2), "n": x9[1],
                                              "top": {"usd": _f(x9[2], 2), "ts": x9[3],

@@ -140,8 +140,21 @@ chk(rowsOf(h) === nV - 20 && /21–\d+ \/ \d+/.test(txt(h)) && /data-v="1" disab
 PGSZ.v = 20; S.attdUI.pg = 1;
 A.attdGo({ dataset: { v: 'd|10-10|rz' } });
 h = F.attdSheet(S.sheet.v);
-chk(S.sheet.t === '현물 실현 · 10월 10일' && /data-a="attdRc" data-v="2026-10-10\|AAA"/.test(h) && /data-a="attdLp"/.test(h) && /가스 비용/.test(h) && rowsOf(h) >= 5 && /같아요/.test(h) && !/1–20/.test(txt(h)),
+chk(S.sheet.t === '현물 실현 · 10월 10일' && /data-a="attdRc" data-v="2026-10-10\|AAA"/.test(h) && /data-a="attdLp"/.test(h) && /가스\(매매 외\)/.test(h) && /실현에서 뺌/.test(h) && !/참고 · 매매 가스·수수료/.test(h) && rowsOf(h) >= 5 && /같아요/.test(h) && !/1–20/.test(txt(h)),
   '줄 바꾸기(현물 실현) = 첫 쪽부터 · 코인 = 차익 영수증 · LP = LP · 가스·스테이킹 줄 · 합 = 현물 실현', txt(h).slice(0, 300));
+// fee1012b: 그날 가스·수수료 전부(서버 feeAllByDate) − 매매 외 가스 = 흐린 참고 줄(가스 줄 바로 아래 · 원가·손익에 포함 칩) · 합·개수 밖
+D.feeAll = { '2026-10-10': [30.0, null] };
+h = F.attdSheet(S.sheet.v);
+const t9 = txt(h), gI = t9.indexOf('가스(매매 외)'), rI = t9.indexOf('참고 · 매매 가스·수수료');
+chk(gI >= 0 && rI > gI && /참고 · 매매 가스·수수료원가·손익에 포함 산 쪽은 원가, 판 쪽은 손익에 이미 들어 있어요 · 합에 안 들어가요−\$23\.45/.test(t9) && /−\$6\.55/.test(t9) && /같아요/.test(h) && /opacity:\.6/.test(h)
+  && /5개<\/span>를 모두 더하면/.test(h),
+  'fee1012b 참고 줄 = 가스 줄 바로 아래 · 매매분 $23.45 · 흐림 · 칩 · 합·개수(5개) 그대로', t9.slice(0, 600));
+// 가스 반영 끔(taxGas.on === false) = 가스는 원가·실현 밖 → '원가·손익에 포함' 참고 줄 없음(오표시 방지)
+const tg9 = D.taxGas; D.taxGas = { on: false };
+h = F.attdSheet(S.sheet.v);
+chk(!/참고 · 매매 가스·수수료/.test(h) && /같아요/.test(h), '가스 반영 끔 = 참고 줄 없음 · 합 그대로', txt(h).slice(0, 600));
+D.taxGas = tg9;
+D.feeAll = {};
 h = F.attdSheet('d|10-10|rzf');
 chk(/선물 영수증/.test(h) && /data-a="attdFr" data-v="2026-10-10\|binance"/.test(h) && /ETH 무기한/.test(h) && /정산 2건/.test(txt(h)), '선물 실현 = 거래소·종목별 · 선물 영수증', txt(h).slice(0, 300));
 h = F.attdSheet('d|10-10|fo');

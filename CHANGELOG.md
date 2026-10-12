@@ -3,6 +3,38 @@
 판마다 더해진 것과 바뀐 동작이에요. 지금 쓰는 법은 [README.md](README.md), 화면 사진은 README 의 '화면 미리보기'에 있어요.
 업데이트는 README [업데이트](README.md#업데이트) 순서대로(멈추기 → 백업 확인 → `git pull` → `bash tools/setup.sh` → `pm2 start ecosystem.config.js`) 하세요.
 
+## 2026-10-12 (4) — 가스(매매 외) 줄 · 매매 가스·수수료 참고 줄
+
+**그날 실현의 가스 줄 = '가스(매매 외)' + 바로 아래 흐린 참고 줄 '참고 · 매매 가스·수수료'(원가·손익에 포함 · 합 밖 · 표시 전용)**
+
+지난 판(2026-10-12 (3))까지 그날 카드와 변동 분해 '현물 실현' 시트의 가스 줄은 매매 외 가스(실패·승인·전송·브릿지·LP)만 담았는데,
+이름만으로는 그날 쓴 가스·수수료 전부로 읽히기 쉬웠어요. 이번 판은 그 줄 이름을 '가스(매매 외)'로 바꾸고, 매매에 든 가스·수수료(산 쪽은 원가, 판 쪽은 손익에 이미 들어 있음)는 따로 참고 줄로 보여 줘요.
+화면 표시만 바뀌어요 — 실현·원가·신고용 명세는 그대로예요. README 사진은 지난 판((3)) 화면 그대로예요(이번 판 줄은 사진에 없어요).
+
+> **업데이트** — 웹 화면만 바뀌어요: 백업 확인 → `git pull` → `pm2 restart tj-web`(다른 유닛은 그대로 둬도 돼요). 재구축·데이터 개정은 없어요(원장 쓰기 없음).
+> 2026-10-12 (3) 보다 전 판에서 바로 올라오면 README [업데이트](README.md#업데이트) 순서대로 전부 하고 [(3) 업데이트 상자](#2026-10-12-3--화면-다듬기--외부-검수-작은-수정--ai-리뷰-전체-채우기)(`state/` 0700 · `.env` 0600)도 보세요.
+
+- **가스(매매 외) 줄** — 변동 분해 '현물 실현' 시트와 그날 카드 실현 기여의 가스 줄 이름 → '가스(매매 외)'(시트 설명 '실패·승인·전송·브릿지·LP 가스 — 실현에서 뺌' ·
+  그날 카드는 마우스를 올리면 '매매에 든 가스·수수료는 각 코인 원가·손익에 들어 있어요'). 줄 금액은 그대로예요.
+- **참고 · 매매 가스·수수료** — 그날 '현물 실현' 시트에서 가스 줄 바로 아래 흐린 줄 하나 — [원가·손익에 포함] 칩 · '산 쪽은 원가, 판 쪽은 손익에 이미 들어 있어요 · 합에 안 들어가요' · 금액 = 그날 가스·수수료 전부 − 가스(매매 외).
+  '전부' = 가스·수수료 탭과 같은 재료(온체인 가스 전부 · 브릿지 수수료 · 거래소 체결·출금 수수료)의 그날(한국 시간) 합. 이 줄은 맨 아래 합 확인 줄의 합·개수와
+  막대 길이 기준에 들지 않아요(합 확인은 종전 그대로). 그날 시트에만 있고(그달 시트엔 없음 · 가스 줄이 없는 날은 목록 끝) 금액이 $0.005 미만이거나 가스 반영을 끈 설치(가스가 원가·실현 밖)에선 안 보여요.
+  서버 상태에 `feeAllByDate`(날짜 → [USD, 원화])가 더해졌어요 — 이 값이 없는 옛 서버면 참고 줄 없이 종전처럼.
+
+**함께**
+
+- **문서** — README '이번 판'·English · 사진은 그대로((3) 화면).
+- **시험** — 공개 시험 2파일에 더함(날짜별 전부 = 가스·수수료 탭 합 · 가스 스위치 켬·끔 · 매매 가스 포함 · 시트 참고 줄 위치·흐림·칩 · 합·개수 그대로) — 전체 8,100건 넘게(파일 253개).
+
+**English · "Gas (non-trading)" line and a trading gas & fees reference line** — In the change-breakdown "현물 실현" (spot realized) sheet and on the day card,
+the gas line is now named "가스(매매 외)" (gas, non-trading: failed, approvals, transfers, bridges, LP). Right below it the day's sheet shows one dimmed reference
+line, "참고 · 매매 가스·수수료" (trading gas & fees), with an "included in cost/PnL" chip (buy-side fees are in cost basis, sell-side fees in PnL): the day's total gas and fees (same inputs as the gas & fees tab — all on-chain
+gas, bridge fees, exchange trading and withdrawal fees, per KST day, served as `feeAllByDate`) minus the non-trading gas line. It is outside the sum check, the row
+count and the bar scale, and is not shown when gas-in-cost is turned off. Display only — realized PnL, cost basis and the tax statement are unchanged. No rebuild and no data revision; `git pull` and
+`pm2 restart tj-web` (coming from before 2026-10-12 (3), follow the full README update). Screenshots are from (3).
+
+**알려진 한계** — 지난 판 그대로예요 — [2026-10-12 (3)](#2026-10-12-3--화면-다듬기--외부-검수-작은-수정--ai-리뷰-전체-채우기).
+
 ## 2026-10-12 (3) — 화면 다듬기 · 외부 검수 작은 수정 · AI 리뷰 전체 채우기
 
 **화면 다듬기(글꼴·색·제목 통일 · 긴 설명 → 한 줄 + 자세히 · 설정 키 알약 · 수집 한계 접힘 · 누르면 위로 튀던 것) · 과거 데이터 가져오기 거래소 보존 한도 경고 · AI 리뷰 '전체 채우기' ·

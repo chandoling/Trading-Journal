@@ -214,4 +214,13 @@ check("끔 가스 비용 항목(그날 실현에서 뺀 비용) 없음", not fof
 toff = invariants(foff, "끔")
 sep = 300 + 35 + 35 + 6 + 35
 check("끔 실현 − 따로 둔 비용(가스 $335 + 출금 수수료 $76) = 켬 실현", abs((toff - sep) - ton) <= 0.05, (toff, sep, ton))
+for f9, t9 in ((fon, "켬"), (foff, "끔")):
+    fa9 = f9.get("feeAllByDate") or {}
+    tab9 = round(sum(float(g.get("spot") or 0) for g in f9.get("gasByChain") or []), 2)
+    check(f"{t9} fee1012 feeAllByDate 합 = 가스·수수료 탭 전체 합(스위치 무관)", fa9 and abs(sum(float(v[0]) for v in fa9.values()) - tab9) <= 0.05, (fa9, tab9))
+    check(f"{t9} fee1012 G2 그날 = 스왑 가스 $35(매매분 — 그날 '가스 비용' 줄엔 없음)", abs(float((fa9.get(iso(D2)) or [0])[0]) - 35) <= 0.05, fa9.get(iso(D2)))
+    check(f"{t9} fee1012 원화 = 양수 · USD 와 짝", all(len(v) == 2 and float(v[1]) > 0 for v in fa9.values()), fa9)
+gx9 = fon.get("gasExpenseByDate") or {}
+check("켬 fee1012 그날 전부 ≥ 그날 '가스 비용'(매매 외 가스 ⊂ 전부)",
+      all(float((fon.get("feeAllByDate") or {}).get(k9, [0])[0]) + 0.01 >= float(v9[0]) for k9, v9 in gx9.items()), [gx9, fon.get("feeAllByDate")])
 T.finish()
