@@ -7,7 +7,7 @@
 
 *English summary is at the bottom — [English](#english).*
 
-![대시보드 — 총자산·전일 대비 분해·총자산 곡선 · 금액은 랜덤값](docs/screenshots/01_dashboard_top.png)
+![대시보드 — 총자산·전일 대비 분해·총자산 곡선 · 금액은 랜덤값](docs/screenshots/01_dashboard_top.png)<br><sub>금액은 랜덤값</sub>
 
 **목차** — [처음 시작하면 이것부터](#처음-시작하면-이것부터) · [화면 미리보기](#화면-미리보기) · [변경 내역(CHANGELOG)](CHANGELOG.md)
 
@@ -53,10 +53,10 @@
 
 | | |
 |---|---|
-| ![타임머신 — 곡선을 끌면 그날의 내 지갑(코인·보관처별 비중)과 '지금 그대로였다면' · 금액은 랜덤값](docs/screenshots/30_wow_timemachine.png) | ![자금 흐름 지도 — 넣은 돈 → 거래소 → 지갑 → 지금 있는 곳(띠를 누르면 그 길로 간 전송 목록) · 금액은 랜덤값](docs/screenshots/31_wow_flows.png) |
-| ![팔기 전 미리보기 — 팔 양을 움직이면 예상 실현손익·올해 누적 양도차익(주문은 넣지 않아요) · 금액은 랜덤값](docs/screenshots/34_wow_sell_preview.png) | ![올해 결산 카드 — 실현·가장 많이 거래한 코인·오래 버틴 코인·수익 난 날, 비율만 보기·이미지 저장 · 금액은 랜덤값](docs/screenshots/32_wow_yearend.png) |
-| ![계획 지키기 점수 — 목표가·손절선(없으면 기본 규칙) 대비 판 매도를 판정, 월별 준수율](docs/screenshots/33_wow_planscore.png) | ![매매 습관 — 요일×시간대별 이익 난 매도 비율·보유 기간별 수익률·판 다음 날 더 오른 비율 · 금액은 랜덤값](docs/screenshots/37_journal_habits.png) |
-| ![지난 1년 하루 실현손익 잔디 — 가장 길게 이긴 흐름·조심할 요일](docs/screenshots/36_daily_heatmap.png) | ![전체 검색(⌘K · /) — 코인·주소·해시·날짜·금액, 필터 문법, '9월에 Base 에서 손해 본 거래' 같은 문장도 · 금액은 랜덤값](docs/screenshots/35_search_palette.png) |
+| ![타임머신 — 곡선을 끌면 그날의 내 지갑(코인·보관처별 비중)과 '지금 그대로였다면' · 금액은 랜덤값](docs/screenshots/30_wow_timemachine.png)<br><sub>금액은 랜덤값</sub> | ![자금 흐름 지도 — 넣은 돈 → 거래소 → 지갑 → 지금 있는 곳(띠를 누르면 그 길로 간 전송 목록) · 금액은 랜덤값](docs/screenshots/31_wow_flows.png)<br><sub>금액은 랜덤값</sub> |
+| ![팔기 전 미리보기 — 팔 양을 움직이면 예상 실현손익·올해 누적 양도차익(주문은 넣지 않아요) · 금액은 랜덤값](docs/screenshots/34_wow_sell_preview.png)<br><sub>금액은 랜덤값</sub> | ![올해 결산 카드 — 실현·가장 많이 거래한 코인·오래 버틴 코인·수익 난 날, 비율만 보기·이미지 저장 · 금액은 랜덤값](docs/screenshots/32_wow_yearend.png)<br><sub>금액은 랜덤값</sub> |
+| ![계획 지키기 점수 — 목표가·손절선(없으면 기본 규칙) 대비 판 매도를 판정, 월별 준수율](docs/screenshots/33_wow_planscore.png) | ![매매 습관 — 요일×시간대별 이익 난 매도 비율·보유 기간별 수익률·판 다음 날 더 오른 비율 · 금액은 랜덤값](docs/screenshots/37_journal_habits.png)<br><sub>금액은 랜덤값</sub> |
+| ![지난 1년 하루 실현손익 잔디 — 가장 길게 이긴 흐름·조심할 요일](docs/screenshots/36_daily_heatmap.png) | ![전체 검색(⌘K · /) — 코인·주소·해시·날짜·금액, 필터 문법, '9월에 Base 에서 손해 본 거래' 같은 문장도 · 금액은 랜덤값](docs/screenshots/35_search_palette.png)<br><sub>금액은 랜덤값</sub> |
 
 - 대시보드 총자산 곡선에 **'BTC 만 들고 있었다면' · '안 팔았다면'** 비교선을 겹쳐 볼 수 있어요(입출금은 빼고 같은 날 같은 돈으로 계산).
 - 문장 검색은 기본으로 **규칙 변환만** 씁니다(외부 호출 없음). `config.json` 의 `"wow": {"ask_llm": true}` 를 켜면 내 컴퓨터의 `claude` CLI 로도 바꿔 봅니다.
@@ -66,11 +66,11 @@
 
 | | |
 |---|---|
-| ![보관처 상세 — 보관처 줄을 누르면 열리는 서랍: 총자산 중 몇 %·코인 구성 링·최근 30일 들어옴/나감/이곳 매매 실현·체인별 비중·들어 있는 코인 · 금액은 랜덤값](docs/screenshots/42_venue_drawer.png) | ![차익 영수증 매수 차트 — 다른 지갑·체인을 거쳐 들어온 코인도 처음 산 곳(DEX 체결)까지 거슬러 매수 점을 찍어요 · 금액은 랜덤값](docs/screenshots/40_receipt_buy_chart.png) |
-| ![보낸 내역 한 주소 펼침 — 보낸 토큰·전송 목록(최근 200건 · 쪽 넘김) · 금액은 랜덤값](docs/screenshots/43_outflow_expanded.png) | ![설정 › 표시 › 금액 랜덤값 — 배수 고정(이 기기에만 저장 · 켜진 동안 값은 안 보여요)](docs/screenshots/44_settings_display_rand.png) |
+| ![보관처 상세 — 보관처 줄을 누르면 열리는 서랍: 총자산 중 몇 %·코인 구성 링·최근 30일 들어옴/나감/이곳 매매 실현·체인별 비중·들어 있는 코인 · 금액은 랜덤값](docs/screenshots/42_venue_drawer.png)<br><sub>금액은 랜덤값</sub> | ![차익 영수증 매수 차트 — 다른 지갑·체인을 거쳐 들어온 코인도 처음 산 곳(DEX 체결)까지 거슬러 매수 점을 찍어요 · 금액은 랜덤값](docs/screenshots/40_receipt_buy_chart.png)<br><sub>금액은 랜덤값</sub> |
+| ![보낸 내역 한 주소 펼침 — 보낸 토큰·전송 목록(최근 200건 · 쪽 넘김) · 금액은 랜덤값](docs/screenshots/43_outflow_expanded.png)<br><sub>금액은 랜덤값</sub> | ![설정 › 표시 › 금액 랜덤값 — 배수 고정(이 기기에만 저장 · 켜진 동안 값은 안 보여요)](docs/screenshots/44_settings_display_rand.png) |
 | ![지갑 자세히 — 체인별 확인 주기(지금 주기 · 하루 1회 · 빈 지갑 · 옛 기록 채우는 중)와 '지금 확인'](docs/screenshots/45_settings_wallet_tier.png) | ![확인 주기 · 예상 사용량 — 오래 안 쓴 주소는 덜 확인하고, 탐색기 하루 예상 호출은 공표 한도의 80% 까지(넘으면 간격을 자동으로 늘려요)](docs/screenshots/46_settings_wallet_tier_budget.png) |
 | ![지갑 추가 — 체인 칩 줄 EVM · Solana · Tron · Sui · TON · Bitcoin(Bitcoin 은 HD 지갑 또는 주소 하나)](docs/screenshots/60_settings_wallet_add_chains.png) | ![과거 데이터 더 가져오기 — 고른 시작 날짜가 거래소 보존 한도보다 옛날이면 거래소별 '… 이전 못 받아요'](docs/screenshots/61_settings_history_limits.png) |
-| ![변동 분해 시트 — 전일 대비 줄을 누르면 무엇 때문인지 · 금액은 랜덤값](docs/screenshots/62_change_breakdown_sheet.png) | ![수집 한계 — 거래소·체인별로 받는 범위와 못 받는 것(긴 이유는 접힘)](docs/screenshots/63_settings_collection_limits.png) |
+| ![변동 분해 시트 — 전일 대비 줄을 누르면 무엇 때문인지 · 금액은 랜덤값](docs/screenshots/62_change_breakdown_sheet.png)<br><sub>금액은 랜덤값</sub> | ![수집 한계 — 거래소·체인별로 받는 범위와 못 받는 것(긴 이유는 접힘)](docs/screenshots/63_settings_collection_limits.png) |
 | ![체인별 조회 — 체인마다 조회 켜기·끄기 스위치, 보낸 거래가 지갑마다 10번 이하면 '끄는 걸 추천해요', 지갑 수에 맞춘 확인 주기·하루 예상 호출·꺼 둔 체인](docs/screenshots/48_settings_chains.png) | |
 
 이번 판(2026-10-12 (3) · 화면 다듬기 · 외부 검수 작은 수정 · AI 리뷰 전체 채우기)에 더해진 것 — 자세한 설명은 [CHANGELOG.md › 2026-10-12 (3)](CHANGELOG.md#2026-10-12-3--화면-다듬기--외부-검수-작은-수정--ai-리뷰-전체-채우기) 에 있어요.
@@ -129,56 +129,56 @@
 
 ### 대시보드
 
-![대시보드 아래쪽 — 보유 코인 표(오늘 변동·7일 추이 · 한 쪽 10줄 · 쪽 넘김) · 금액은 랜덤값](docs/screenshots/02_dashboard_below.png)
+![대시보드 아래쪽 — 보유 코인 표(오늘 변동·7일 추이 · 한 쪽 10줄 · 쪽 넘김) · 금액은 랜덤값](docs/screenshots/02_dashboard_below.png)<br><sub>금액은 랜덤값</sub>
 
-![보유 코인 한 줄 펼침 — 보관 위치별 수량·원가 · 금액은 랜덤값](docs/screenshots/03_holding_row_expanded.png)
+![보유 코인 한 줄 펼침 — 보관 위치별 수량·원가 · 금액은 랜덤값](docs/screenshots/03_holding_row_expanded.png)<br><sub>금액은 랜덤값</sub>
 
 | 총자산 곡선 1년 | 총자산 곡선 전체 |
 |---|---|
-| ![총자산 곡선 — 1년 · 금액은 랜덤값](docs/screenshots/15_long_curve_1y.png) | ![총자산 곡선 — 전체 기간 · 금액은 랜덤값](docs/screenshots/15_long_curve_all.png) |
+| ![총자산 곡선 — 1년 · 금액은 랜덤값](docs/screenshots/15_long_curve_1y.png)<br><sub>금액은 랜덤값</sub> | ![총자산 곡선 — 전체 기간 · 금액은 랜덤값](docs/screenshots/15_long_curve_all.png)<br><sub>금액은 랜덤값</sub> |
 
-![BTC 비교선 — 같은 날 같은 돈으로 BTC 만 샀다면 대비 내 실제 매매(입출금 뺀 수익률) · 금액은 랜덤값](docs/screenshots/38_dash_bench.png)
+![BTC 비교선 — 같은 날 같은 돈으로 BTC 만 샀다면 대비 내 실제 매매(입출금 뺀 수익률) · 금액은 랜덤값](docs/screenshots/38_dash_bench.png)<br><sub>금액은 랜덤값</sub>
 
 
 ### 매매일지 · 차익 영수증
 
-![매매일지 — 코인별 사이클(투입 → 매도) · 금액은 랜덤값](docs/screenshots/04_journal_cycles.png)
+![매매일지 — 코인별 사이클(투입 → 매도) · 금액은 랜덤값](docs/screenshots/04_journal_cycles.png)<br><sub>금액은 랜덤값</sub>
 
-![차익 영수증 — 매수·매도 한 차트, 코드 점수, AI 평가 상자 · 금액은 랜덤값](docs/screenshots/05_receipt_drawer.png)
+![차익 영수증 — 매수·매도 한 차트, 코드 점수, AI 평가 상자 · 금액은 랜덤값](docs/screenshots/05_receipt_drawer.png)<br><sub>금액은 랜덤값</sub>
 
 | 매수·매도 타점 — NMR | 매수·매도 타점 — JPYC |
 |---|---|
-| ![차익 영수증 타점 차트 — NMR: 산 곳·판 곳을 시세 위에 점으로 · 금액은 랜덤값](docs/screenshots/50_receipt_chart_nmr.png) | ![차익 영수증 타점 차트 — JPYC: 산 곳·판 곳을 시세 위에 점으로 · 금액은 랜덤값](docs/screenshots/51_receipt_chart_jpyc.png) |
+| ![차익 영수증 타점 차트 — NMR: 산 곳·판 곳을 시세 위에 점으로 · 금액은 랜덤값](docs/screenshots/50_receipt_chart_nmr.png)<br><sub>금액은 랜덤값</sub> | ![차익 영수증 타점 차트 — JPYC: 산 곳·판 곳을 시세 위에 점으로 · 금액은 랜덤값](docs/screenshots/51_receipt_chart_jpyc.png)<br><sub>금액은 랜덤값</sub> |
 
-![선물 상세 — 포지션·펀딩·수수료 · 금액은 랜덤값](docs/screenshots/16_futures_drawer.png)
+![선물 상세 — 포지션·펀딩·수수료 · 금액은 랜덤값](docs/screenshots/16_futures_drawer.png)<br><sub>금액은 랜덤값</sub>
 
 | 선물 영수증 — 데스크톱 | 선물 영수증 — 모바일 |
 |---|---|
-| ![선물 영수증 — 그날 청산한 포지션과 실제 시세 위 진입(▲▼)·청산(○), 수익·손실 구간 · 금액은 랜덤값](docs/screenshots/53_futures_receipt.png) | ![모바일 선물 영수증(아래에서 올라오는 시트) · 금액은 랜덤값](docs/screenshots/54_mobile_futures_receipt.png) |
+| ![선물 영수증 — 그날 청산한 포지션과 실제 시세 위 진입(▲▼)·청산(○), 수익·손실 구간 · 금액은 랜덤값](docs/screenshots/53_futures_receipt.png)<br><sub>금액은 랜덤값</sub> | ![모바일 선물 영수증(아래에서 올라오는 시트) · 금액은 랜덤값](docs/screenshots/54_mobile_futures_receipt.png)<br><sub>금액은 랜덤값</sub> |
 
 ### 일별 기록 · 명세
 
-![일별 기록 — 6월 달력(날마다 실현손익) · 금액은 랜덤값](docs/screenshots/52_daily_calendar_june.png)
+![일별 기록 — 6월 달력(날마다 실현손익) · 금액은 랜덤값](docs/screenshots/52_daily_calendar_june.png)<br><sub>금액은 랜덤값</sub>
 
-![일별 기록 — 10월 달력과 그날 카드(무엇이 움직였나·시세 코인별 분해·30분 체결 막대·매매 근거 메모) · 금액은 랜덤값](docs/screenshots/06_daily_day_card.png)
+![일별 기록 — 10월 달력과 그날 카드(무엇이 움직였나·시세 코인별 분해·30분 체결 막대·매매 근거 메모) · 금액은 랜덤값](docs/screenshots/06_daily_day_card.png)<br><sub>금액은 랜덤값</sub>
 
-![일별 기록 — 달력 아래 'M월 한눈에'(한 달 자산 변동 분해·실현 상위/하위 5) · 금액은 랜덤값](docs/screenshots/06b_daily_month_glance.png)
+![일별 기록 — 달력 아래 'M월 한눈에'(한 달 자산 변동 분해·실현 상위/하위 5) · 금액은 랜덤값](docs/screenshots/06b_daily_month_glance.png)<br><sub>금액은 랜덤값</sub>
 
-![일별 기록 — 그날의 기록 표 · 금액은 랜덤값](docs/screenshots/07_daily_records_table.png)
+![일별 기록 — 그날의 기록 표 · 금액은 랜덤값](docs/screenshots/07_daily_records_table.png)<br><sub>금액은 랜덤값</sub>
 
-![최근 30일 마감 — 날마다 실현·USDT 종가·김프·총자산·AI 리뷰 표시 · 금액은 랜덤값](docs/screenshots/07b_daily_recent_30d.png)
+![최근 30일 마감 — 날마다 실현·USDT 종가·김프·총자산·AI 리뷰 표시 · 금액은 랜덤값](docs/screenshots/07b_daily_recent_30d.png)<br><sub>금액은 랜덤값</sub>
 
 | 양도차익 명세 | 가스·수수료 |
 |---|---|
-| ![양도차익 명세(신고용 계산 보조) · 금액은 랜덤값](docs/screenshots/08_tax_statement.png) | ![가스·수수료 · 금액은 랜덤값](docs/screenshots/09_gas_fees.png) |
+| ![양도차익 명세(신고용 계산 보조) · 금액은 랜덤값](docs/screenshots/08_tax_statement.png)<br><sub>금액은 랜덤값</sub> | ![가스·수수료 · 금액은 랜덤값](docs/screenshots/09_gas_fees.png)<br><sub>금액은 랜덤값</sub> |
 
 ### 보낸 내역 · 미매칭 · 기타 자산
 
-![보낸 내역 — 전송 중·브릿지 매칭·외부 전송 추적 · 금액은 랜덤값](docs/screenshots/10_outflows.png)
+![보낸 내역 — 전송 중·브릿지 매칭·외부 전송 추적 · 금액은 랜덤값](docs/screenshots/10_outflows.png)<br><sub>금액은 랜덤값</sub>
 
-![미매칭 — 원가 미확인 유입·스팸 의심 · 금액은 랜덤값](docs/screenshots/11_unmatched.png)
+![미매칭 — 원가 미확인 유입·스팸 의심 · 금액은 랜덤값](docs/screenshots/11_unmatched.png)<br><sub>금액은 랜덤값</sub>
 
-![기타 자산 — 부동산·주식·금·현금·부채(증권사 연결은 미검증 · 이 캡처는 자산 이름을 '종류 A' 로 바꿈) · 금액은 랜덤값](docs/screenshots/12_other_assets.png)
+![기타 자산 — 부동산·주식·금·현금·부채(증권사 연결은 미검증 · 이 캡처는 자산 이름을 '종류 A' 로 바꿈) · 금액은 랜덤값](docs/screenshots/12_other_assets.png)<br><sub>금액은 랜덤값</sub>
 
 ![기타 자산 › NFT — 추적 중·후보·스팸 접힘 (이 캡처는 컬렉션 이름·바닥가도 가림)](docs/screenshots/12b_other_assets_nft.png)
 
@@ -198,15 +198,15 @@
 
 | 대시보드 | 보유 코인 | 일별 기록 |
 |---|---|---|
-| ![모바일 대시보드 · 금액은 랜덤값](docs/screenshots/21_mobile_dashboard.png) | ![모바일 보유 코인 · 금액은 랜덤값](docs/screenshots/22_mobile_holdings.png) | ![모바일 일별 기록 · 금액은 랜덤값](docs/screenshots/23_mobile_daily.png) |
+| ![모바일 대시보드 · 금액은 랜덤값](docs/screenshots/21_mobile_dashboard.png)<br><sub>금액은 랜덤값</sub> | ![모바일 보유 코인 · 금액은 랜덤값](docs/screenshots/22_mobile_holdings.png)<br><sub>금액은 랜덤값</sub> | ![모바일 일별 기록 · 금액은 랜덤값](docs/screenshots/23_mobile_daily.png)<br><sub>금액은 랜덤값</sub> |
 
 | 기타 자산 | 매매일지(아래 탭 막대) | 알림 설정 |
 |---|---|---|
-| ![모바일 기타 자산 · 금액은 랜덤값](docs/screenshots/24_mobile_other_assets.png) | ![모바일 매매일지와 아래 탭 막대 · 금액은 랜덤값](docs/screenshots/25_mobile_tabbar_journal.png) | ![모바일 알림 설정](docs/screenshots/26_mobile_settings_alerts.png) |
+| ![모바일 기타 자산 · 금액은 랜덤값](docs/screenshots/24_mobile_other_assets.png)<br><sub>금액은 랜덤값</sub> | ![모바일 매매일지와 아래 탭 막대 · 금액은 랜덤값](docs/screenshots/25_mobile_tabbar_journal.png)<br><sub>금액은 랜덤값</sub> | ![모바일 알림 설정](docs/screenshots/26_mobile_settings_alerts.png) |
 
 | 일별 — M월 한눈에 | 기타 자산 › NFT | 보관처 상세 |
 |---|---|---|
-| ![모바일 'M월 한눈에' · 금액은 랜덤값](docs/screenshots/27_mobile_month_glance.png) | ![모바일 NFT(컬렉션 이름·바닥가 가림)](docs/screenshots/28_mobile_nft.png) | ![모바일 보관처 상세(아래에서 올라오는 시트) · 금액은 랜덤값](docs/screenshots/47_mobile_venue_sheet.png) |
+| ![모바일 'M월 한눈에' · 금액은 랜덤값](docs/screenshots/27_mobile_month_glance.png)<br><sub>금액은 랜덤값</sub> | ![모바일 NFT(컬렉션 이름·바닥가 가림)](docs/screenshots/28_mobile_nft.png) | ![모바일 보관처 상세(아래에서 올라오는 시트) · 금액은 랜덤값](docs/screenshots/47_mobile_venue_sheet.png)<br><sub>금액은 랜덤값</sub> |
 
 | 체인별 조회 | | |
 |---|---|---|
