@@ -2296,7 +2296,33 @@ def _bithumb_fill(r, ts_ms):
     f9 = norm_fill("bithumb", r.get("uuid"), ts_ms, b, q, side,
                    px, ev, r.get("paid_fee"), q)
     f9["funds"] = str(funds or "")
+    legs9 = _bithumb_cashlegs(r, funds)
+    if legs9:
+        f9["cashlegs"] = legs9
     return f9
+
+
+def _bithumb_cashlegs(r, funds):
+    import acct_norm
+    from decimal import Decimal, InvalidOperation
+    tr = r.get("trades")
+    if not isinstance(tr, list) or not tr or funds in (None, ""):
+        return None
+    try:
+        if r.get("trades_count") is not None and int(r["trades_count"]) != len(tr):
+            return None
+        legs = []
+        for t in tr:
+            ts = acct_norm.fill_ts({"trades": [t]}) if isinstance(t, dict) else None
+            if not ts or t.get("funds") in (None, ""):
+                return None
+            legs.append((int(ts), Decimal(str(t["funds"]))))
+        if abs(sum(d for _t, d in legs) - Decimal(str(funds))) > Decimal("0.5"):
+            return None
+    except (TypeError, ValueError, InvalidOperation):
+        return None
+    legs.sort(key=lambda x: x[0])
+    return [[t, str(d)] for t, d in legs]
 
 
 _BITHUMB_ASC_CACHE = {}
@@ -5456,6 +5482,39 @@ def extension_pass(env: dict, state: dict, writer, target: int, now: int, window
         list(ex9.map(one, active))
 
 
+_VIEW_CYC = {}
+
+
+def _view_snap(bal9) -> dict:
+    snap9 = {"ts": int(time.time()), "balances": dict(bal9)}
+    if isinstance(getattr(bal9, "debts", None), dict):
+        snap9["debts"] = {k9: v9 for k9, v9 in bal9.debts.items() if v9 < 0}
+    if isinstance(getattr(bal9, "sources", None), list):
+        snap9["sources"] = sorted(set(bal9.sources))
+    if getattr(bal9, "loans", None):
+        snap9["loans"] = list(bal9.loans)
+    return snap9
+
+
+def balance_prefetch(env: dict, cyc: int, fetchers=None) -> dict:
+    out = {}
+    for ex, (_fn, need) in (fetchers or FETCHERS).items():
+        if not all(env.get(k) for k in need):
+            continue
+        if _VIEW_CYC.get(ex, -9) >= cyc - 1:
+            out[ex] = "skip"
+            continue
+        try:
+            snap9 = _view_snap(BAL_FETCHERS[ex](env))
+            common.atomic_write_json(os.path.join(common.STATE_DIR, f"exf_balances_{ex}.json.view"), snap9)
+            out[ex] = "ok"
+            log.info("%s: 잔고 %d종 먼저 읽음(표시용 — 옛 기록 수집 전)", ex, len(snap9["balances"]))
+        except (Exception, SystemExit) as e:
+            out[ex] = _xm(repr(e))[:160]
+            log.info("%s 잔고 먼저 읽기 실패(주기 끝에 다시): %s", ex, out[ex][:120])
+    return out
+
+
 def _hl_on(cfg) -> bool:
     try:
         import hl_spot
@@ -5486,6 +5545,7 @@ def main():
         liq_watch.start_background(_env, _RL_OFF)
     except Exception as e:
         log.warning("청산 빠른 감시 스레드 시작 실패(거래소 수집은 계속): %s", repr(e)[:160])
+    cyc9 = 0
     while True:
         env = _env()
         cfg = common.load_config()
@@ -5502,6 +5562,19 @@ def main():
         except Exception as e:
             log.warning("연결 거래소 목록 기록 실패(무시): %s", repr(e)[:120])
         _LATE_CYC["id"], _LATE_CYC["ex"] = f"c{now}:{uuidlib.uuid4().hex[:10]}", set()
+        cyc9 += 1
+        try:
+            balance_prefetch(env, cyc9)
+        except Exception as e:
+            log.warning("잔고 먼저 읽기 실패(종전 순서로 계속): %s", repr(e)[:160])
+        if hl_on9:
+            try:
+                import hl_spot
+                m9 = hl_spot.prefetch_view(cfg, poll=poll9)
+                if m9.startswith("ok"):
+                    log.info("hyperliquid: 잔고 먼저 읽음(표시용 — 옛 기록 수집 전): %s", m9)
+            except (Exception, SystemExit) as e:
+                log.info("hyperliquid 잔고 먼저 읽기 실패(주기 끝 수집은 그대로): %s", repr(e)[:160])
         cw = _CycleWriter(writer, state)
         for ex, (fn, need) in FETCHERS.items():
             if not all(env.get(k) for k in need):
@@ -5619,6 +5692,7 @@ def main():
                             if getattr(bal9, "loans", None):
                                 snap9["loans"] = list(bal9.loans)
                             common.atomic_write_json(bp9 + ".view", snap9)
+                            _VIEW_CYC[ex] = cyc9
                         except (Exception, SystemExit) as e9v:
                             if loud9:
                                 log.info("%s 표시용 잔고 갱신 생략(체결 실패 주기): %s", ex, _xm(repr(e9v))[:120])
@@ -5643,6 +5717,7 @@ def main():
                                 log.info("%s: 잔고 스냅샷 승격 (%d종)%s", ex, len(prev_balances), " — 일치 확인 없이(연속 불일치 상한)" if agree9 == "forced" else "")
                     common.atomic_write_json(pend_bp, snap9)
                     common.atomic_write_json(bp9 + ".view", snap9)
+                    _VIEW_CYC[ex] = cyc9
                     if loud9:
                         log.info("%s: 잔고 %d종 (pending)", ex, len(bal9))
             except (Exception, SystemExit) as e:

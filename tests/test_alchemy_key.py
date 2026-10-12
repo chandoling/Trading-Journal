@@ -119,9 +119,9 @@ check("A5d 단가: getTokenBalances 20 · +eth_getBalance = 40 · getLogs 60 · 
 check("A5e 다른 장부 단가 무변(NodeReal getLogs 50 + 일반 25 · Ankr 200)",
       U("node_nodereal", ["eth_getLogs", "eth_call"]) == 75 and U("node_ankr", ["eth_call"]) == 200 and U("node_ankr", None) == 200)
 pol = bf_engine._policy_for("base-mainnet.g.alchemy.com")
-check("A5f 초당 한도 = 무료 300 CU/s·15rps 의 80% 아래(1초 창 (버스트 + 초당) × 60CU ≤ 240) · 계정 합산 공유 버킷(프로세스 합산)",
-      pol.get("call_rate") and (pol["call_burst"] + pol["call_rate"]) * 60 <= 240 and (pol["call_burst"] + pol["call_rate"]) <= 12
-      and pol.get("share") == "node_alchemy" and pol.get("share_xproc") is True, pol)
+check("A5f 초당 한도 = 무료 300 CU/s·15rps 의 80% 아래(exbal1012 칸 = 20 CU: 공유 버킷 1초 창 (버스트 + 초당) × 20CU ≤ 240 · 칸 ≥ 요청 → 요청 ≤ 12) · 계정 합산 공유 버킷(프로세스 합산)",
+      pol.get("call_rate") and (pol["share_burst"] + pol["share_rate"]) * 20 <= 240 and (pol["share_burst"] + pol["share_rate"]) <= 12
+      and min(pol["call_cost"].values()) >= 1 and pol.get("share") == "node_alchemy" and pol.get("share_xproc") is True, pol)
 
 
 class _Resp:

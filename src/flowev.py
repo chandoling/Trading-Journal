@@ -410,7 +410,7 @@ def classify(rows, ctx, transit=(), of_rows=(), of_match=None, of_bridge=None, d
                                                           "qty": float(aq) if aq is not None else None,
                                                           "fee": fee, "exp": EXP_NORMAL, "from": frm, "where": aw or e.get("dst")}))
         elif e.get("own") or e.get("cls") == "wallet_untracked":
-            amb = e.get("why") in ("txid_ambiguous", "amount_ambiguous") or e.get("cls") == "wallet_untracked"
+            amb = e.get("why") in ("txid_ambiguous", "amount_ambiguous") or e.get("cls") == "wallet_untracked" or e.get("state") == "prov"
             out.append(_ev(ctx, eid, ts, "out", "internal", wev, f"own:{e.get('cls') or e.get('verdict')}", gid, q, sym, net, src, dst, t,
                            "exchange_wd", {"st": "none" if amb else "pending", "exp": EXP_NORMAL, "fee": fee, "from": frm}))
         elif e.get("addr"):

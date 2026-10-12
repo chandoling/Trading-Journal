@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from decimal import Decimal, InvalidOperation
 
+import chain_registry
 import common
 import pricing
 
@@ -57,7 +58,8 @@ def items(prov: dict, *, done_chain, asset_of, ledger, ainfo) -> list:
                 a = asset_of(chain, kind, addr)
                 aid, gid, sym, dec = (a if a else (None, None, sym0, dec0))
                 if dec is None:
-                    dec = dec0 if dec0 is not None else (9 if chain == "sol" and kind == "native" else 18 if kind == "native" else None)
+                    dec = dec0 if dec0 is not None else (9 if chain == "sol" and kind == "native" else
+                                                         chain_registry.native_decimals(chain, 18) if kind == "native" else None)
                 if dec is None:
                     continue
                 b = _dec(raw, dec)
@@ -95,7 +97,7 @@ def items(prov: dict, *, done_chain, asset_of, ledger, ainfo) -> list:
 
 def _unit(it, native_sym=None) -> str | None:
     if it.get("kind") == "native":
-        s9 = str((native_sym(it.get("chain")) if native_sym else None) or "").strip()
+        s9 = str((native_sym(it.get("chain")) if native_sym else None) or chain_registry.native_symbol(it.get("chain")) or "").strip()
         if not s9:
             s9 = str(it.get("sym") or "").strip()
         s9 = s9.upper()

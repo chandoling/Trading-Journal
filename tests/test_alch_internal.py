@@ -573,7 +573,7 @@ def _sim(method, sec=40.0):
     fk = types.SimpleNamespace(**{k: getattr(_bt, k) for k in dir(_bt) if not k.startswith("__")})
     fk.monotonic = lambda: clk["t"]
     fk.time = lambda: clk["t"]
-    fk.sleep = lambda x: clk.__setitem__("t", clk["t"] + max(0.0, float(x)))
+    fk.sleep = lambda x: clk.__setitem__("t", clk["t"] + max(1e-6, float(x)))
     pol = dict(bf_engine._policy_for(AHOST), share="t_al944_" + method[-8:].lower())
     with bf_engine._SHARES_LOCK:
         bf_engine._SHARES.pop(pol["share"], None)
@@ -605,8 +605,8 @@ m10, m1 = _win_max(ts_at, 10.0) * CU["alchemy_getAssetTransfers"], _win_max(ts_a
 check("L10a getAssetTransfers 연속 호출 · 10초 창 최대 CU ≤ 2,400(무료 3,000 CU/10초의 80%)", m10 <= 2400, (m10, _win_max(ts_at, 10.0)))
 check("L10b getAssetTransfers · 1초 창 최대 CU ≤ 240(무료 300 CU/s 의 80%)", m1 <= 240, (m1, _win_max(ts_at, 1.0)))
 lg10 = _win_max(ts_lg, 10.0)
-check("L10c eth_getLogs(60 CU) 처리량 종전 그대로(10초 창 22콜 = 버스트 2 + 초당 2 × 10 · 1,320 CU) · 1초 창 ≤ 240 CU",
-      lg10 == 22 and _win_max(ts_lg, 1.0) * CU["eth_getLogs"] <= 240, (lg10, _win_max(ts_lg, 1.0)))
+check("L10c eth_getLogs(60 CU = 3칸 · exbal1012 칸 20 CU) · 10초 창 ≤ 2,400 CU · 1초 창 ≤ 240 CU · 처리량 종전(10초 22콜) 이상",
+      lg10 * CU["eth_getLogs"] <= 2400 and lg10 >= 22 and _win_max(ts_lg, 1.0) * CU["eth_getLogs"] <= 240, (lg10, _win_max(ts_lg, 1.0)))
 GC = []
 _acq0 = bf_engine.HostGate.acquire
 
@@ -626,10 +626,10 @@ try:
 finally:
     bf_engine.HostGate.acquire = _acq0
 os.environ.pop(NK.ENV_ALCHEMY, None)
-check("L10d 실제 경로(rpc_call → http_request): getAssetTransfers 1콜이 Alchemy 게이트에서 2칸(120 CU = 60 CU × 2)", GC == [2], GC)
-check("L10e 다른 칸(call_cost 없음 — drpc 등)·메서드 모름 = 칸 수 종전(콜 수) 그대로",
-      bf_engine.gate(DH).gate_cost(3, ["alchemy_getAssetTransfers"] * 3) == 3 and bf_engine.gate(AHOST).gate_cost(2, None) == 2
-      and bf_engine.gate(AHOST).gate_cost(2, ["eth_getLogs", "eth_call"]) == 2)
+check("L10d 실제 경로(rpc_call → http_request): getAssetTransfers 1콜이 Alchemy 게이트에서 6칸(120 CU = 20 CU × 6 — exbal1012 칸 20 CU)", GC == [6], GC)
+check("L10e 다른 칸(call_cost 없음 — drpc 등) = 칸 수 종전(콜 수) 그대로 · Alchemy 메서드 모름 = 콜마다 2칸 · getLogs 3 + eth_call 2",
+      bf_engine.gate(DH).gate_cost(3, ["alchemy_getAssetTransfers"] * 3) == 3 and bf_engine.gate(AHOST).gate_cost(2, None) == 4
+      and bf_engine.gate(AHOST).gate_cost(2, ["eth_getLogs", "eth_call"]) == 5)
 
 check("Z 키 값이 기록·오류 문구에 없음", AKEY not in json.dumps(w.cursor, ensure_ascii=False) and AKEY not in json.dumps(WR.recs, ensure_ascii=False))
 T.finish()

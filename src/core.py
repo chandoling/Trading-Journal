@@ -2796,7 +2796,7 @@ class Core:
         fp = json.dumps([pend, sorted([s9, str(r9.get("owner")), sorted(o9)] for s9, r9, o9 in gaps)])
         return pend, gaps, fp
 
-    def _nonevm_fetch_plan(self, chain: str, wallets: list, mode: str = None):
+    def _nonevm_fetch_plan(self, chain: str, wallets: list, mode: str = None, latest: bool = False):
         ad = self._nonevm_adapter(chain)
         if ad is None:
             raise RuntimeError(f"[{chain}] 수집기 어댑터 없음")
@@ -2838,7 +2838,10 @@ class Core:
                 q_owners -= set(held)
                 if not q_owners:
                     raise RuntimeError(f"[{chain}] 미해소 gap 이 조회 지갑에 영향(또는 모름) — 지갑별 대사 보류")
-            bal = ad.fetch_balances(set(q_owners), None, tokens=toks)
+            bal = ad.fetch_balances(set(q_owners), None, tokens=toks, **({"latest": True} if latest and chain == "btc" else {}))
+            if (latest and chain == "ton" and isinstance(bal, dict) and bal.get("_complete") is False and bal.get("_why")
+                    and set(bal["_why"]) <= {"wallet_lt_ahead", "jetton_lt_ahead", "pending_details"}):
+                bal = dict(bal, _complete=True, _why=[])
             sm9 = {w9: sorted(map(str, ks9)) for w9, ks9 in ((bal.get("_sum_mismatch") if isinstance(bal, dict) else None) or {}).items()
                    if w9 in first9 and ks9} if first9 else {}
             if sm9:
@@ -2905,9 +2908,12 @@ class Core:
     def _recon_fetch_plan(self, chain: str, kind: str, wallets: list, mode: str = None, latest: bool = False):
         wallets = list(wallets)
         if kind == "nonevm":
-            return self._nonevm_fetch_plan(chain, wallets, mode)
+            return self._nonevm_fetch_plan(chain, wallets, mode, latest=latest)
         if kind == "sol":
             url9 = self._sol_rpc_url()
+            if latest:
+                ln9, nat9 = self._prov_sol_lanes(url9)
+                return lambda: self._prov_sol_fetch(ln9, wallets, native_url=nat9)
             return lambda: recon.fetch_sol_balances(url9, wallets)
         if kind == "bsc":
             cas = {}
@@ -2917,6 +2923,15 @@ class Core:
                 if r["address"]:
                     cas[r["address"]] = (r["symbol"], r["decimals"] if r["decimals"] is not None else self._meta_dec("bsc", r["address"]))
             rpcs8 = list(self.cfg["bsc"]["detail_rpcs"])
+            if latest:
+                own8 = self._disc_own_cas("bsc", wallets)
+                sw8 = {str(k).lower(): str(v) for tab9 in (pricing.STABLE_CAS, pricing.JPY_STABLE_CAS) for k, v in (tab9.get("bsc") or {}).items()}
+                st8 = self._recon_strict_fn("bsc")
+                cas8 = {str(k).lower(): v for k, v in cas.items()}
+                px8 = self._disc_prep("bsc", "bsc", wallets, st8) if mode != "fast" else None
+                return lambda: self._prov_fastx("bsc", px8, lambda **x9: self._prov_fast_fetch(
+                    "bsc", rpcs8, wallets, cas8, discover_url=None, multicall=recon.MULTICALL3, wallet_cas=own8, block=None, strict=st8, sweep=sw8, **x9),
+                    full=mode != "fastx")
             prep8 = self._disc_prep("bsc", "bsc", wallets, self._recon_strict_fn("bsc"))
             if prep8 is None:
                 return lambda: recon.fetch_bsc_balances(rpcs8, wallets, cas)
@@ -2925,7 +2940,8 @@ class Core:
         cc9 = self.cfg["chains"][chain]
         rpc_only9 = common.chain_discovery(chain, cc9) == "rpc"
         bsoff9 = common.bs_blocked(chain, cc9)
-        base9 = None if (rpc_only9 or bsoff9 or not cc9.get("blockscout")) else str(cc9["blockscout"]).rstrip("/")
+        fast9 = bool(latest and mode in ("fast", "fastx"))
+        base9 = None if (rpc_only9 or bsoff9 or fast9 or not cc9.get("blockscout")) else str(cc9["blockscout"]).rstrip("/")
         from evm_watch import RpcSynthMixin as _RS
         rpcs9 = list(cc9.get("rpcs") or _RS.RPC_DEFAULT.get(chain) or [])
         if not rpcs9:
@@ -2971,9 +2987,15 @@ class Core:
         mc9 = recon.MULTICALL3_BY_CHAIN.get(chain, recon.MULTICALL3)
         nat9 = mode in ("nat", "natx")
         sweep9 = None
-        if bsoff9 and not nat9:
+        if (bsoff9 or fast9) and not nat9:
             sweep9 = {str(k).lower(): str(v) for tab9 in (pricing.STABLE_CAS, pricing.JPY_STABLE_CAS) for k, v in (tab9.get(chain) or {}).items()}
-        prep9 = None if nat9 else self._disc_prep(chain, "evm", wallets, strict9)
+        prep9 = None if (nat9 or fast9) else self._disc_prep(chain, "evm", wallets, strict9)
+
+        if fast9:
+            px9 = self._disc_prep(chain, "evm", wallets, strict9) if mode == "fastx" else None
+            return lambda: self._prov_fastx(chain, px9, lambda **x9: self._prov_fast_fetch(
+                chain, rpcs9, wallets, cas, discover_url=None, must=must, exclude=excl, multicall=mc9, wallet_cas=wcas, block=None,
+                strict=strict9, sweep=sweep9, **x9))
 
         def _go9(prep9=prep9):
             ext9 = token_discovery.recon_extra_safe(prep9, upto=blk9)
@@ -2981,8 +3003,108 @@ class Core:
                                                 exclude=excl, want_native=mode != "tok", want_tokens=not nat9,
                                                 multicall=mc9, wallet_cas=wcas, block=blk9, strict=strict9, sweep=sweep9,
                                                 **({"wallet_extra": ext9["extra"]} if ext9.get("extra") else {}))
-            return token_discovery.filter_result(bal9, prep9, ext9)
+            return token_discovery.filter_result(bal9, prep9, ext9, keep_pending=bool(latest))
         return _go9
+
+    @staticmethod
+    def _prov_fastx(chain: str, prep, fetch, full: bool = False) -> dict:
+        if not prep:
+            return fetch()
+        ext = token_discovery.recon_extra_safe(prep) if full else token_discovery.fast_extra(prep)
+        bal = fetch(**({"wallet_extra": ext["extra"]} if ext.get("extra") else {}))
+        return token_discovery.filter_result(bal, prep, ext, keep_pending=True)
+
+    def _prov_sol_lanes(self, url: str):
+        sol = self.cfg.get("sol") or {}
+        h9 = bf_engine._host_norm(url)
+        if not (h9 == "helius-rpc.com" or h9.endswith(".helius-rpc.com")):
+            return [url], None
+
+        def _u(k, d):
+            v = sol.get(k, d)
+            return str(v).strip() if isinstance(v, str) and v.strip().startswith("http") else None
+        head, arch = _u("head_rpc", "https://solana-rpc.publicnode.com"), _u("archive_rpc", "https://api.mainnet-beta.solana.com")
+        return [url] + ([arch] if arch else []), head
+
+    @staticmethod
+    def _prov_sol_fetch(url, wallets: list, stake_path: str = None, now: float = None, native_url: str = None) -> dict:
+        r = recon.fetch_sol_balances_fast(url if isinstance(url, list) else [url], wallets, native_url=native_url)
+        try:
+            sd = common.read_json(stake_path or os.path.join(common.STATE_DIR, "sol_stake.json"), {}) or {}
+        except (Exception, SystemExit):
+            sd = {}
+        try:
+            fresh = (time.time() if now is None else now) - float(sd.get("ts") or 0) <= 3 * 3600
+        except (TypeError, ValueError):
+            fresh = False
+        accts = sd.get("accounts") if fresh and isinstance(sd.get("accounts"), dict) else {}
+        try:
+            r["_stake_ts"] = int(float(sd.get("ts") or 0)) if fresh and isinstance(sd.get("accounts"), dict) else 0
+        except (TypeError, ValueError):
+            r["_stake_ts"] = 0
+        ws = set(wallets)
+        per = r.setdefault("per_wallet", {})
+        mine = sorted(pk for pk, a in accts.items() if pk and isinstance(a, dict) and a.get("w") in ws)
+        live = Core._prov_sol_stake_live(url, mine, native_url) if mine else None
+        if live is not None:
+            r["_stake_live"] = 1
+        for pk in mine:
+            a = accts[pk]
+            try:
+                lam = int(live[pk]) if live is not None else int(a.get("lamports") or 0)
+            except (TypeError, ValueError, KeyError):
+                continue
+            if lam >= 0:
+                per[f"{a['w']}:stake:{pk}"] = {("native", None): lam}
+        return r
+
+    @staticmethod
+    def _prov_sol_stake_live(url, pks: list, native_url: str = None):
+        lanes = [u for u in ([native_url] if native_url else []) + ([url[0]] if isinstance(url, list) and url else [url] if isinstance(url, str) else []) if u]
+        out = {}
+        for i in range(0, len(pks), 100):
+            chunk = pks[i:i + 100]
+            got = None
+            for u in lanes:
+                try:
+                    res = recon._rpc(u, "getMultipleAccounts", [chunk, {"encoding": "base64", "dataSlice": {"offset": 0, "length": 0}}])
+                    vals = res.get("value") if isinstance(res, dict) else None
+                    if not isinstance(vals, list) or len(vals) != len(chunk):
+                        raise RuntimeError("getMultipleAccounts value 형식 오류")
+                    got = [0 if v is None else int(v["lamports"]) for v in vals]
+                    break
+                except Exception as e:
+                    log.info("SOL 스테이크 지금 잔고 조회 실패(계정 %d개 · 다음 차선 → 끝내 실패면 스냅숏 값): %s", len(chunk), common.safe_err(e)[:80])
+            if got is None:
+                return None
+            out.update(zip(chunk, got))
+        return out
+
+    @staticmethod
+    def _prov_fast_fetch(chain: str, urls: list, wallets: list, cas: dict, **kw) -> dict:
+        r = recon.fetch_evm_rpc_balances(urls, wallets, cas, want_native=False, **kw)
+        per = r.get("per_wallet") or {}
+        hold = r.setdefault("_hold", {})
+        todo = [w for w in wallets if w in per]
+        if not todo:
+            return r
+        blk = hex(int(r["_block"]))
+        mc = kw.get("multicall") if r.get("_multicall") else None
+        if mc and chain not in common.ZK_STACK and chain not in common.NATIVE_MIRROR:
+            items = [(("nat", w), mc, "4d2301cc" + str(w).lower().replace("0x", "").rjust(64, "0")) for w in todo]
+            got = recon._mc_call(urls, blk, items, mc)
+            for w in todo:
+                rd = got.get(("nat", w))
+                if rd is not None and len(rd) == 32:
+                    per[w][("native", None)] = int.from_bytes(rd, "big")
+                else:
+                    hold.setdefault(w, []).append("native")
+        else:
+            for w in todo:
+                per[w][("native", None)] = recon._rpc_any(urls, "eth_getBalance", [str(w).lower(), blk], check=recon._hex_int)
+        for w in hold:
+            per.pop(w, None)
+        return r
 
     def _disc_prep(self, chain: str, kind: str, wallets: list, strict):
         if (self.cfg.get("token_discovery") or {}).get("enabled") is False:
@@ -3457,9 +3579,17 @@ class Core:
 
     def _gate_reload(self):
         now9 = time.time()
-        if now9 - getattr(self, "_gate_at", 0) < self.GATE_RELOAD_SEC:
+        sig9 = []
+        for p9 in (common.ACTIVITY_GATE_PATH, common.BACKFILL_SPEED_PATH):
+            try:
+                st9 = os.stat(p9)
+                sig9.append((st9.st_mtime_ns, st9.st_size))
+            except OSError:
+                sig9.append(None)
+        if now9 - getattr(self, "_gate_at", 0) < self.GATE_RELOAD_SEC and sig9 == getattr(self, "_gate_sig", sig9):
             return 0
         self._gate_at = now9
+        self._gate_sig = sig9
         if not os.path.exists(common.ACTIVITY_GATE_PATH):
             return 0
         cfg2 = common.load_config()
@@ -3735,6 +3865,17 @@ class Core:
     PROV_FILE = "prov_bal.json"
     PROV_EVERY = 3600
     PROV_TICK = 120
+    PROV_PAR = 6
+    PROV_ORDER = ("eth", "base", "arbitrum", "sol", "bsc", "polygon", "optimism")
+    PROV_FAST_UPGRADE = 600
+
+    def _prov_alch_ok(self, chain: str) -> bool:
+        if (self.cfg.get("token_discovery") or {}).get("enabled") is False:
+            return False
+        try:
+            return bool(token_discovery.alchemy_net(chain) and token_discovery.alchemy_url(chain))
+        except Exception:
+            return False
 
     def _prov_targets(self) -> list:
         scopes = [(c, "evm") for c in self.cfg.get("chains", {}) if self.my_wallets.get(c)]
@@ -3742,9 +3883,13 @@ class Core:
             scopes.append(("sol", "sol"))
         if any(w.get("type") == "bsc_rpc" for w in self.cfg["wallets"]):
             scopes.append(("bsc", "bsc"))
+        for c9 in sorted(self.__dict__.get("chain_owners") or {}):
+            if self.chain_owners[c9] and self._nonevm_adapter(c9) is not None:
+                scopes.append((c9, "nonevm"))
         out = []
         for chain, kind in scopes:
-            ws = sorted(self.sol_wallets) if kind == "sol" else sorted(self.my_wallets.get(chain, set()))
+            ws = (sorted(self.sol_wallets) if kind == "sol" else sorted(self.chain_owners.get(chain) or ()) if kind == "nonevm"
+                  else sorted(self.my_wallets.get(chain, set())))
             if ws and not self._meta_get(f"recon_done_{chain}"):
                 out.append((chain, kind, "chain", ws))
         return out
@@ -3796,7 +3941,9 @@ class Core:
 
     def prov_pass(self):
         now = time.time()
-        if now - float(self.__dict__.get("_prov_last") or 0) < self.PROV_TICK:
+        jobs = self.__dict__.setdefault("_prov_jobs", {})
+        done9 = any(j["ev"].is_set() for j in jobs.values())
+        if now - float(self.__dict__.get("_prov_last") or 0) < self.PROV_TICK and not done9:
             return
         self._prov_last = now
         p = os.path.join(common.STATE_DIR, self.PROV_FILE)
@@ -3809,36 +3956,74 @@ class Core:
         except (Exception, SystemExit):
             st = {}
         st = st if isinstance(st, dict) else {}
-        jobs = self.__dict__.setdefault("_prov_jobs", {})
         tg = {c: (k, m, ws) for c, k, m, ws in self._prov_targets()}
         changed = False
         for c in [c for c in st if c not in tg]:
             st.pop(c, None)
             changed = True
-        for c, (kind, mode, ws) in tg.items():
-            job = jobs.get(c)
-            if job is not None:
-                if not job["ev"].is_set():
-                    continue
-                jobs.pop(c, None)
-                if job["bal"] is not None and job["mode"] == mode and job["wallets"] == ws:
-                    st[c] = self._prov_pack(job["bal"], mode, job["t0"], req=ws, t1=job.get("t1"), kind=kind)
-                    changed = True
-                elif job["err"] is not None:
-                    log.info("임시 잔고 %s 조회 실패(다음 바퀴): %s", c, common.safe_err(job["err"])[:120])
+        for c in [c for c, j in jobs.items() if j["ev"].is_set()]:
+            job = jobs.pop(c)
+            kind, mode, ws = tg.get(c) or (None, None, None)
+            if kind is None:
+                continue
+            if job["bal"] is not None and job["mode"] == mode and job["wallets"] == ws:
+                st[c] = self._prov_pack(job["bal"], mode, job["t0"], req=ws, t1=job.get("t1"), kind=kind)
+                if job.get("fast"):
+                    st[c]["fast"] = int(job["fast"])
+                if kind == "sol":
+                    st[c]["stake_ts"] = int((job["bal"] or {}).get("_stake_ts") or 0)
+                    st[c]["stake_live"] = int((job["bal"] or {}).get("_stake_live") or 0)
+                if any(s9 == "pending" for s9 in (((job["bal"] or {}).get("_disc") or {}).get("status") or {}).values()):
+                    st[c]["fast"] = 3
+                changed = True
+            elif job["err"] is not None:
+                log.info("임시 잔고 %s 조회 실패(다음 바퀴): %s", c, common.safe_err(job["err"])[:120])
+        def _fresh(c, ws):
+            ent = st.get(c)
+            return isinstance(ent, dict) and ent.get("mode") == tg[c][1] \
+                and (ent.get("req") or sorted((ent.get("wallets") or {}).keys())) == sorted(str(w) for w in ws)
+        have_all = all(_fresh(c, ws) for c, (_k, _m, ws) in tg.items())
+        rj9 = self.__dict__.get("_recon_jobs") or {}
+        sst9 = 0
+        if any(k9 == "sol" for k9, _m9, _w9 in tg.values()):
+            try:
+                sd9 = common.read_json(os.path.join(common.STATE_DIR, "sol_stake.json"), {}) or {}
+                t9 = int(float(sd9.get("ts") or 0)) if isinstance(sd9.get("accounts"), dict) else 0
+                sst9 = t9 if now - t9 <= 3 * 3600 else 0
+            except (Exception, SystemExit):
+                sst9 = 0
+        def _rank(c, ws):
+            return (self.PROV_ORDER.index(c) if c in self.PROV_ORDER else len(self.PROV_ORDER), -len(ws), c)
+        for c, (kind, mode, ws) in sorted(tg.items(), key=lambda kv: (_fresh(kv[0], kv[1][2]),) + _rank(kv[0], kv[1][2])):
+            if c in jobs:
                 continue
             ent = st.get(c)
-            if isinstance(ent, dict) and ent.get("mode") == mode and (ent.get("req") or sorted((ent.get("wallets") or {}).keys())) == sorted(str(w) for w in ws) \
-                    and now - float(ent.get("at") or 0) < self.PROV_EVERY:
+            alch9 = False
+            stake9 = False
+            if _fresh(c, ws):
+                age9 = now - float(ent.get("at") or 0)
+                f9 = int(ent.get("fast") or 0)
+                alch9 = f9 == 1 and kind in ("evm", "bsc") and self._prov_alch_ok(c)
+                stake9 = kind == "sol" and sst9 > int(ent.get("stake_ts") or 0)
+                due9 = alch9 or stake9 or (f9 == 1 and kind in ("evm", "bsc")) or f9 == 3 or (f9 and have_all and age9 >= self.PROV_FAST_UPGRADE)
+                if not due9 and age9 < self.PROV_EVERY:
+                    continue
+            first9 = not _fresh(c, ws)
+            fast9 = (1 if first9 and kind in ("evm", "bsc") else 2 if alch9 else 0)
+            lane9 = "par" if (first9 or stake9) else "alch" if alch9 else "disc"
+            if first9 or stake9:
+                if sum(1 for j in jobs.values() if j.get("par")) >= self.PROV_PAR:
+                    continue
+            elif any(j.get("lane") == lane9 for j in jobs.values()):
                 continue
-            if any(not j["ev"].is_set() for j in jobs.values()):
+            if kind == "nonevm" and any(k9[0] == c and not j9["ev"].is_set() for k9, j9 in rj9.items()):
                 continue
             try:
-                fn = self._recon_fetch_plan(c, kind, ws, None, latest=True)
+                fn = self._recon_fetch_plan(c, kind, ws, {1: "fast", 2: "fastx"}.get(fast9), latest=True)
             except Exception as e:
                 log.info("임시 잔고 %s 조회 준비 실패(다음 바퀴): %s", c, common.safe_err(e)[:120])
                 continue
-            job = {"wallets": ws, "mode": mode, "t0": now, "bal": None, "err": None, "ev": threading.Event()}
+            job = {"wallets": ws, "mode": mode, "t0": now, "bal": None, "err": None, "ev": threading.Event(), "fast": fast9, "par": first9 or stake9, "lane": lane9}
 
             def _run(job=job, fn=fn):
                 try:

@@ -913,6 +913,64 @@ def fetch_balances(addr: str, meta: Meta, deadline, ast: dict, now=None):
     return out, [f"spot:{_a8(addr)}", f"perp:{_a8(addr)}", f"stake:{_a8(addr)}"], ok, why
 
 
+def _pre_one(addr: str, meta, deadline) -> dict:
+    out = {}
+    sp = call({"type": "spotClearinghouseState", "user": addr}, deadline) or {}
+    if not isinstance(sp, dict) or not isinstance(sp.get("balances"), list):
+        raise ValueError("spotClearinghouseState 형식 오류")
+    for b in sp["balances"]:
+        if not isinstance(b, dict):
+            raise ValueError("HL 현물 잔고 행 형식 오류")
+        n, v = meta.key(b.get("token")), _dec(b.get("total"))
+        if v is None:
+            raise ValueError("HL 현물 잔고 행 형식 오류")
+        if n and v != 0:
+            out[n] = out.get(n, Decimal(0)) + v
+    try:
+        if parse_mode(call({"type": "userAbstraction", "user": addr}, deadline)) == "standard":
+            cash, _u, _n = _cash(call({"type": "clearinghouseState", "user": addr}, deadline) or {})
+            if cash:
+                out["USDC"] = out.get("USDC", Decimal(0)) + cash
+        ds = call({"type": "delegatorSummary", "user": addr}, deadline)
+        if isinstance(ds, dict):
+            tot = sum(((_dec(ds.get(k)) or Decimal(0)) for k in ("delegated", "undelegated", "totalPendingWithdrawal")), Decimal(0))
+            if tot > 0:
+                out["HYPE"] = out.get("HYPE", Decimal(0)) + tot
+    except (Budget, ValueError, OSError, HLError) as e:
+        log.info("hyperliquid 먼저 읽기: %s 부가 칸 생략(현물만): %s", _a8(addr), repr(e)[:80])
+    return out
+
+
+def prefetch_view(cfg: dict, poll: float = 600, now=None, budget: float = 60.0) -> str:
+    now = float(now or CLOCK())
+    addrs = addresses(cfg)
+    if not addrs:
+        return "off"
+    bp = bal_path()
+    newest = 0.0
+    for suf in ("", ".pending", ".view"):
+        try:
+            d = common.read_json(bp + suf, {}) if os.path.exists(bp + suf) else {}
+        except (Exception, SystemExit):
+            d = {}
+        if isinstance(d, dict) and isinstance(d.get("balances"), dict):
+            newest = max(newest, float(d.get("ts") or 0))
+    if now - newest < float(poll) + 300:
+        return "skip"
+    deadline = CLOCK() + float(budget)
+    meta = load_meta(deadline, int(now))
+    bal, srcs = {}, []
+    for a in addrs:
+        out = _pre_one(a, meta, deadline)
+        for k, q in out.items():
+            bal[k] = bal.get(k, Decimal(0)) + q
+        srcs += [f"spot:{_a8(a)}"]
+    snap = {"ts": int(CLOCK()), "balances": {k: float(v) for k, v in sorted(bal.items()) if v != 0}, "sources": sorted(set(srcs)),
+            "addrs": len(addrs), "pre": 1}
+    common.atomic_write_json(bp + ".view", snap)
+    return f"ok {len(snap['balances'])}종"
+
+
 def run_pass(state: dict, writer, cfg: dict, now=None, save=None, budget=None) -> str:
     addrs = addresses(cfg)
     if not addrs:

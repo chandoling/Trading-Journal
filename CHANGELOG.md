@@ -3,6 +3,89 @@
 판마다 더해진 것과 바뀐 동작이에요. 지금 쓰는 법은 [README.md](README.md), 화면 사진은 README 의 '화면 미리보기'에 있어요.
 업데이트는 README [업데이트](README.md#업데이트) 순서대로(멈추기 → 백업 확인 → `git pull` → `bash tools/setup.sh` → `pm2 start ecosystem.config.js`) 하세요.
 
+## 2026-10-12 (6) — 외부 검수 표시 정합성 3건(빗썸 부분 체결 · 첫 대사 전 전송 중 · Solana 스테이크)
+
+**(5) 판에서 새로 생긴 '지금 잔고' 경로의 표시 오류 3건을 최소 수정 — 원장·원가·실현·신고용 명세는 그대로**
+
+> **업데이트** — README [업데이트](README.md#업데이트) 순서대로(멈추기 → 백업 확인 → `git pull` → `bash tools/setup.sh` → `pm2 start ecosystem.config.js` → `pm2 save`) —
+> `tj-core`·`tj-exf`·`tj-web` 과 공통 모듈을 쓰는 유닛이 다시 켜져요. 재구축·데이터 개정은 없어요.
+
+- **빗썸 원화 예수금 — 부분 체결이 잔고 스냅숏을 가로지를 때** — 주문 하나가 스냅숏 앞뒤로 나눠 체결되면 주문 전체 원화를 마지막 체결 시각에 두고 굴려
+  스냅숏에 이미 든 몫까지 다시 셌어요(예: 10만원 → 매수 8만원 · 매도 12만원으로 다음 스냅숏까지). 이제 주문 상세의 개별 체결 시각·금액을 체결 기록에 함께 남기고,
+  지금 원화는 스냅숏 뒤 체결분만 굴려요(원화 수수료는 체결액 비례 · 합은 주문과 같음). 개별 체결 정보가 불완전하거나 이 판 전 기록이면 종전대로(다음 스냅숏에서 풀림) ·
+  지난날 곡선은 코인 기장과 맞게 주문 단위 그대로예요.
+- **받는 거래소 첫 대사 전 '전송 중'** — 받는 거래소 스냅숏 앞뒤 60초 안에 같은 통화 기록이 있어 그 통화의 '지금 잔고'를 이번에 더하지 않았는데도,
+  그 거래소로 가는 '전송 중'까지 '이미 셈'으로 지워 둘 다 빠질 수 있었어요(예: 1,010 USDT → 10). 이제 '이미 셈'은 지금 잔고를 실제로 더한 통화에만 적용해요
+  (지갑 → 거래소 '입금 대기'도 같음 · 이미 원장과 같은 통화는 그대로 이중 계상 방지).
+- **Solana 스테이크 칸(첫 대사 전)** — 스테이크 칸은 최대 3시간 전 스테이크 목록 값이라, 그 사이 스테이크 ↔ 지갑 이동이 아직 원장에 없으면 두 번 세거나(인출) 빠졌어요(예치).
+  이제 지갑 잔고와 함께 스테이크 계정의 지금 잔고를 다시 읽어요(`getMultipleAccounts` 100개당 1콜 · 공개 노드 차선 먼저) · 실패하면 종전 목록 값(스냅숏 시각 경계).
+
+## 2026-10-12 (5) — 새 설치 지금 총자산 몇 분 안 · 빗썸 원화 예수금 · Alchemy 속도 칸
+
+**새로 설치한 뒤 첫 화면 총자산 = 기동 몇 분 안에 지금 잔고로(옛 기록은 뒤에서 천천히) · 해외 거래소 잔고 먼저 읽기 · 거래소 '지금 잔고(옛 기록 받는 중)' ·
+온체인 지금 잔고 전 체인·동시·빠른 판 · 받는 쪽이 첫 대사 전이면 '전송 중' 빼기 · 빗썸 원화 예수금 굴림 · OKX 담보대출 첫 대사 전 칸 · Alchemy 속도 칸 20 CU**
+
+지난 판까지 새 설치는 옛 기록을 받는 동안에도 오늘 보유·총자산을 '지금 잔고'로 보여 줬지만, 그 지금 잔고가 처음 보이기까지 오래 걸렸어요 —
+해외 거래소 잔고는 옛 기록(입출금·체결 · 바이낸스 전 심볼 첫 바퀴) 뒤 차례라 수십 분 뒤에야 읽혔고, 거래소는 첫 대사 전엔 원장에 들어온 몫만 보였고,
+온체인은 한 번에 한 체인씩 토큰 찾기까지 끝나야 보였어요. 이번 판은 '지금 자산은 몇 분 안, 옛 기록(백필)은 느려도 됨'을 기준으로 순서를 바꿨어요.
+임시 잔고는 장부에 쓰지 않고, 그 체인·거래소 첫 대사가 끝나면 원장 기초 잔고가 대신해요 — 원가·실현·신고용 명세 계산과 지난날 곡선은 그대로예요.
+
+> **업데이트** — README [업데이트](README.md#업데이트) 순서대로(멈추기 → 백업 확인 → `git pull` → `bash tools/setup.sh` → `pm2 start ecosystem.config.js` → `pm2 save`) —
+> 공통 모듈이 바뀌어 대부분 유닛(`tj-core`·`tj-evm`·`tj-bsc`·`tj-sol`·`tj-ex`·`tj-exf`·`tj-web`·`tj-alert`·`tj-review`·새 체인 유닛)이 다시 켜져요.
+> 재구축·데이터 개정은 없어요(업데이트만으로는 원장 쓰기 없음). 이미 첫 대사를 마친 설치엔 임시 잔고 칸이 생기지 않아요(바뀌는 건 빗썸 원화 예수금·Alchemy 속도 칸).
+> 2026-10-12 (3) 보다 전 판에서 바로 올라오면 [(3) 업데이트 상자](#2026-10-12-3--화면-다듬기--외부-검수-작은-수정--ai-리뷰-전체-채우기)(`state/` 0700 · `.env` 0600)도 보세요.
+
+- **해외 거래소 잔고 먼저 읽기** — `tj-exf` 가 매 주기 맨 먼저(옛 기록 받기 전) 키 있는 거래소 잔고를 한 번 읽어 화면 표시용 파일(`state/exf_balances_<거래소>.json.view`)만 써요 —
+  대사·승격에 쓰는 정식 잔고 파일과 규칙은 그대로 · 직전 주기 끝에 표시 잔고를 쓴 거래소는 건너뛰어 평소엔 기동 첫 주기에 거래소마다 1번 더 읽는 것뿐이에요(거래소 예산·429 물러나기 그대로).
+  Hyperliquid 도 표시 파일이 없거나 한 주기 넘게 낡았으면 현물을 먼저 읽어요(주소당 현물 1콜 + 되면 기본 DEX 무기한 현금·스테이킹 · 60초 마감 · 한 주소라도 실패면 쓰지 않음).
+- **거래소 '지금 잔고(옛 기록 받는 중)'** — 거래소 첫 잔고 대사 전엔 그 거래소 칸 = 지금 거래소 잔고(부채 포함 · 원화·달러 제외) + 스냅숏 뒤 원장 증감(온체인 '지금 잔고'와 같은 규약) —
+  보관처 줄 '거래소 지금 잔고(옛 기록 받는 중)'. 원장에 아직 없는 심볼도 행으로 보이고, 잔고보다 부채가 큰 순부채는 음수 '빌린 몫' 행으로 총자산에서 빼요.
+  그 거래소 대사가 끝나면 이 몫은 0(원장 기초 잔고가 대신 · 같은 순간 둘 다 세지 않음). Hyperliquid 도 첫 대사 전엔 같은 임시 잔고(무기한 현금은 부호 그대로).
+- **OKX 담보대출 첫 대사 전 칸** — 원장 그룹이 여럿인 (심볼, 거래소) 칸을 한 칸으로 모으고 빌린 몫도 화면 부채 기준으로 다시 정해요 —
+  종전엔 첫 대사 전 원장의 음수 칸이 그대로 총자산에서 빠져 총자산이 크게 낮게 보일 수 있었어요.
+- **온체인 '첫 대사 전 지금 잔고' — 전 체인 · 동시 · 빠른 판** — 대상에 Tron·Sui·TON·Bitcoin 도 더해 전 체인(EVM·BNB Chain·Solana 포함) ·
+  첫 판은 체인마다 동시에(최대 6체인 · 노드별 속도는 계량기 그대로) '빠른 판'(원장에 있는 토큰 + 검증 스테이블 + 네이티브를 멀티콜로 · 토큰 찾기 없음) →
+  끝난 체인은 기다리지 않고 Alchemy `alchemy_getTokenBalances` 로 찾는 둘째 판(지갑당 보통 1콜 · 토큰이 100개 넘는 지갑은 100개마다 1콜 더 · Alchemy 가 되는 체인 · 스팸 거르기 그대로) · 안 되는 체인은 종전 찾기 포함 판 ·
+  순서 = 총자산 몫이 클 법한 체인 먼저(Ethereum·Base·Arbitrum·Solana·BNB Chain·Polygon·Optimism) → 지갑 수 · 찾기 시간 상한에 걸린 지갑은 다음 바퀴에 이어 받기 · 그 뒤로는 종전처럼 1시간마다.
+  Bitcoin·TON 임시 잔고는 대사 준비 상태와 무관하게 읽고, Bitcoin 은 수집 상태에 아직 없는 설정 지갑도 읽어요(첫 저장 전 0 으로 보이지 않게).
+  Solana 스테이크 칸은 스테이크 스냅숏(1시간마다) 시각까지의 원장과 견줘요 — 스냅숏 뒤 인출이 지갑 잔고와 스테이크 칸에 두 번 잡히지 않게(공개 검수).
+- **Solana** — 지금 잔고를 네이티브 100개 묶음 + 토큰 계정 병렬(주 노드 4 + 공개 노드 1)로 읽고, 스테이크 계정도 넣어요(이미 받아 둔 스테이크 목록 · 추가 호출 없음 ·
+  새 목록이 생기면 바로 다시) · 실패한 지갑만 보류(0 으로 보이지 않음).
+- **체인 자동 켬 즉시 합류** — 활동 점검이 새 체인을 켜면 10분 주기를 기다리지 않고 바로 지금 잔고 대상에 들어와요.
+- **'전송 중' 이중 계상 막기** — 받는 쪽(지갑·거래소·Hyperliquid)이 아직 첫 대사 전이고 그쪽 지금 잔고를 출금 뒤에 읽었으면, 그쪽으로 가는 '전송 중'·'입금 대기'는 총자산에 더하지 않아요
+  (지금 잔고가 이미 셈 — 유령 전송 중 방지 · 받는 지갑 조회가 그 통화(네이티브·검증 스테이블 · Solana 는 전부)를 봤을 때만) ·
+  기록 줄엔 '받는 쪽 옛 기록 받는 중 — 지금 잔고에 이미 반영' · 이런 출금의 미도착 알림은 '도착 확인 불가'로 둬요(옛 기록이 들어오기 전 '아직 안 들어옴' 오경보 없음).
+- **빗썸 원화 예수금** — 원화 = 마지막 잔고 스냅숏 + 스냅숏 뒤 원장의 원화 증감(체결·원화 입출금 · 0 아래로 안 내려감) — 체결 직후 다음 스냅숏 전까지 '사기 전 원화'와 '산 코인'을
+  함께 세던 것(판 뒤엔 판 원화가 빠지던 것)을 막아요. 업비트는 그대로(1분 스냅숏 · 열린 주문 보정은 따로).
+- **Alchemy 속도 칸** — 공용 속도 칸 1칸 = 20 CU(종전 60) · 메서드별 칸 = 공식 CU ÷ 20 올림 → `alchemy_getTokenBalances` 초당 6콜(종전 2) ·
+  합산 상한은 그대로 초당 240 CU·12 요청(옛 무료 300 CU/s·15 요청의 80% · 모든 프로세스 합산) · 유료 요금제를 고르면 초당 520 CU·15 요청 · 하루 몫(월 한도의 80%)은 그대로.
+
+**함께**
+
+- **문서** — README '이번 판'·처음 시작 6번 줄·첫 실행·알려진 한계·English · [docs/API_KEYS.md](docs/API_KEYS.md) Alchemy 초당 상한 · README 사진 20장을 이번 판 화면으로 새로(나머지는 2026-10-12 (3) 화면 그대로).
+- **시험** — 공개 시험 추가(거래소 먼저 읽기·임시 잔고·순부채 행·OKX 담보대출 칸·전송 중 판정·빗썸 원화 굴림·Hyperliquid 먼저 읽기·전 체인 동시 빠른 판·Alchemy 둘째 판·Solana 묶음·Alchemy 칸) —
+  전체 8,200건 넘게(파일 259개).
+
+**English · Total within minutes on a fresh install** — On a new install, today's holdings and total now show the actual current balances within minutes of starting,
+while old history keeps filling in the background. `tj-exf` reads every keyed exchange's balance first in each cycle (display file only — reconciliation files and rules are
+unchanged), and Hyperliquid spot is read first too. Until an exchange's first reconciliation, its row is the current exchange balance (debts included, KRW/USD excluded) plus
+ledger changes after that snapshot, including symbols the ledger does not have yet and a negative "빌린 몫" (borrowed) row for net debt; OKX collateral-loan rows no longer drag the
+total down. The on-chain "current balance before first reconciliation" now covers every chain (Tron, Sui, TON and Bitcoin added), runs up to 6 chains at once with a fast pass
+(ledger tokens, verified stablecoins and native coin via multicall), followed right away by an `alchemy_getTokenBalances` pass (usually one call per wallet, one more per extra 100 tokens) where Alchemy works; Solana uses
+batched and parallel reads and includes stake accounts; chains switched on automatically join at once. A transfer heading to a side that is still before its first
+reconciliation is not added as "in transit" (the current balance already counts it), and its arrival alert is "cannot confirm" instead of a false "not arrived".
+Bithumb KRW = last balance snapshot plus ledger KRW changes after it (no double count right after a fill). The shared Alchemy gate now counts 20 CU per slot
+(`alchemy_getTokenBalances` 6/s, still 240 CU and 12 requests per second in total; paid plans 520 CU/s). 20 README screenshots were retaken on this release (the rest are from 2026-10-12 (3)). No rebuild and no data revision; follow the README update
+(stop everything → `git pull` → `bash tools/setup.sh` → `pm2 start ecosystem.config.js` → `pm2 save` — most units restart).
+
+**알려진 한계(새로 더한 것)** — 자세한 설명은 README [알아 둘 것](README.md#알아-둘-것) · 그 밖은 지난 판 그대로예요 — [2026-10-12 (3)](#2026-10-12-3--화면-다듬기--외부-검수-작은-수정--ai-리뷰-전체-채우기).
+
+- 지금 잔고로 막 찾은 새 토큰은 시세가 붙기 전까지 총자산에 들어가지 않아요(실측 22~24분 · 보통 금액이 작은 토큰) — 저절로 붙어요.
+- 아직 추적하지 않던 체인을 활동 점검이 자동으로 켜는 경우는 점검(기동 4분 뒤 시작)·속도 측정이 끝난 뒤라 그 체인 지금 잔고가 10분 넘게 걸릴 수 있어요.
+- 업비트 원화 예수금은 굴리지 않아요(1분 스냅숏) — 체결 직후 다음 스냅숏(1분 안)까지 원화와 산 코인이 함께 보일 수 있어요.
+- Hyperliquid 먼저 읽기는 HIP-3(기본 외) 무기한 DEX 현금을 빼요 — 그 몫은 주기 끝 수집에서 보여요.
+- 받는 쪽이 아직 첫 대사 전이면 그쪽으로 가는 전송은 받는 쪽이 입금을 처리하기 전(거래소 입금 확인 대기 등)에 그쪽 잔고를 다시 읽은 경우 도착할 때까지 총자산에서 잠깐 빠져 보일 수 있어요 — 도착 뒤 다음 잔고 조회에서 맞춰져요(유령 '전송 중' 이중 계상을 막는 쪽을 골랐어요).
+
 ## 2026-10-12 (4) — 가스(매매 외) 줄 · 매매 가스·수수료 참고 줄
 
 **그날 실현의 가스 줄 = '가스(매매 외)' + 바로 아래 흐린 참고 줄 '참고 · 매매 가스·수수료'(원가·손익에 포함 · 합 밖 · 표시 전용)**

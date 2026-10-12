@@ -80,7 +80,7 @@ tj-bot 은 **무료 키와 공개 노드만으로** 돌아가게 짜여 있어�
 **얼마나 쓰나**
 
 - 무료 = 월 3,000만 CU · 초당 300 CU(15 요청). 봇은 **월 한도의 80%** 를 31일로 나눈 하루 몫(약 77만 CU)까지만 쓰고, 다 쓰면 그날(UTC)은 멈췄다가
-  다음 날 이어서 합니다. 초당도 80% 아래(초당 2요청 · 모든 프로세스 합산).
+  다음 날 이어서 합니다. 초당도 80% 아래(초당 240 CU · 12요청 — 모든 프로세스 합산 · 20 CU 칸으로 세어 `alchemy_getTokenBalances` 면 초당 6콜 · 유료 키는 초당 520 CU · 15요청).
 - **따라잡기 버스트(무료 키만 · Alchemy·Ankr·NodeReal·Helius 공통)**: 실시간(감시·새 거래 확인)으로는 한도를 다 안 쓰니, 백필·첫 전수처럼 밀린 일을
   따라잡을 때 남는 몫을 **하루 몫의 10배(열흘치)까지** 앞당겨 씁니다. 실시간이 실제로 쓰는 양(지난 7일 장부 실측 · 오늘 쓰는 속도)× 1.5 를
   오늘 남은 시간과 앞으로 30일 날마다 먼저 남겨 두고, 그 나머지만 백필에 씁니다 — 실시간이 늘면 그 자리에서 백필 몫이 줄어 물러나요.
@@ -215,7 +215,7 @@ are built in memory only.
 - **Alchemy** (`TJ_ALCHEMY_KEY`, free 30M CU/month — https://dashboard.alchemy.com/signup): finds every token a wallet ever touched plus current
   balances (`alchemy_getTokenBalances`) so long-held tokens are not missed. Watching and backfill stay on free nodes; Alchemy only helps where no free
   path exists. One full pass at first, then only (wallet, chain) pairs that free signals show as changed. Metered with the official CU table under a
-  daily share of 80% of the monthly limit (and 80% of the per-second limit); the key is read on every call, so saving it needs no restart.
+  daily share of 80% of the monthly limit (and 80% of the per-second limit: 240 CU and 12 requests/s across all processes, counted in 20 CU slots); the key is read on every call, so saving it needs no restart.
   On Base it also fills **internal ETH transfers of old transactions** that every trace node failed to return (free Chainnodes history ends after ~30-45 days;
   keyless drpc times out on heavy transactions): only blocks older than 1 hour, and only when all trace nodes said the history is gone, the block is older
   than 30 days, or the deferred retry failed twice — one `alchemy_getAssetTransfers` call (category `internal`, 120 CU) per block, never for live polling.

@@ -28,6 +28,8 @@ PROVIDERS = {
                 "hosts": ["*.g.alchemy.com"], "paid_only": False, "pool": False},
 }
 PAID_HOST_POLICY = {
+    "alchemy": {"*.g.alchemy.com": {"rate": 15.0, "burst": 2, "conc": 4, "call_rate": 25.0, "call_burst": 1,
+                                    "share": "node_alchemy", "share_rate": 25.0, "share_burst": 1, "share_xproc": True}},
     "nodereal": {"bsc-mainnet.nodereal.io": {"rate": 8.0, "burst": 8, "conc": 4, "call_rate": 5.0, "call_burst": 5,
                                              "share": "node_nodereal", "share_rate": 5.0, "share_burst": 5, "share_xproc": True}},
 }

@@ -1019,6 +1019,41 @@ def recon_extra(prep: dict, upto=None, sleep=time.sleep, deadline: float = None,
     return out
 
 
+def fast_extra(prep: dict, deadline: float = None, discover_fn=None) -> dict:
+    out = {"extra": {}, "meta": {}, "src": {}, "status": {}, "fail": {}, "ok": {}}
+    if not prep or prep.get("off"):
+        return out
+    chain = prep["chain"]
+    env = _env()
+    if not (alchemy_net(chain) and alchemy_url(chain, env)):
+        return out
+    dl = deadline if deadline is not None else time.time() + JOB_MAX_SEC
+    dfn = discover_fn or discover
+    gen = set(prep.get("genuine") or ())
+    for w in (prep.get("sigs") or {}):
+        if time.time() > dl:
+            break
+        try:
+            r = dfn(chain, w, cfg=prep.get("cfg") or {}, env=env, sources=["alchemy"], deadline=dl)
+        except Exception as e:
+            out["fail"][w] = {"alchemy": _clean("error: " + common.safe_err(e))}
+            continue
+        meta = r.get("meta") or {}
+        if r.get("fail"):
+            out["fail"][w] = dict(r["fail"])
+        out["status"][w] = "ok" if (r.get("ok") or {}).get("alchemy") is not None and "alchemy" not in (r.get("fail") or {}) else "fail"
+        nz = sorted(ca for ca in (r.get("cas") or {}) if (meta.get(ca) or {}).get("alnz"))
+        src9 = {ca: ["alchemy"] for ca in nz}
+        for ca in gen:
+            src9.setdefault(ca, []).append("ledger")
+        out["extra"][w] = set(list(src9)[:MAX_QUERY])
+        out["src"][w] = {ca: src9[ca] for ca in out["extra"][w]}
+        for ca in nz:
+            if ca in meta:
+                out["meta"].setdefault(ca, dict(meta[ca]))
+    return out
+
+
 def _wstatus(ok9: dict, fail: dict, es: dict) -> str:
     got = [s9 for s9 in (ok9 or {}) if s9 in INDEX_SOURCES or s9 == "logs"]
     if not got:
@@ -1326,7 +1361,7 @@ def note_skip(chain: str, skips: dict, meta: dict = None) -> None:
         pass
 
 
-def filter_result(bal: dict, prep: dict, ext: dict, dex=None) -> dict:
+def filter_result(bal: dict, prep: dict, ext: dict, dex=None, keep_pending: bool = False) -> dict:
     if not isinstance(bal, dict) or not prep or prep.get("off"):
         return bal
     chain = prep["chain"]
@@ -1449,7 +1484,7 @@ def filter_result(bal: dict, prep: dict, ext: dict, dex=None) -> dict:
                 meta[ca] = (m["sym"], meta[ca][1])
     hold = bal.setdefault("_hold", {}) if isinstance(bal.get("_hold", {}), dict) else None
     for w, s in (ext.get("status") or {}).items():
-        if s == "pending" and hold is not None:
+        if s == "pending" and hold is not None and not keep_pending:
             ww = next((x for x in per if str(x).lower() == w), w)
             hold.setdefault(ww, []).append("발견 진행 중")
             per.pop(ww, None)

@@ -881,7 +881,7 @@ class BtcAdapter(reg.ChainAdapter):
                           "payload_digest": chain_event.payload_digest(t)}}
         return rec
 
-    def fetch_balances(self, owners, boundary, tokens=None):
+    def fetch_balances(self, owners, boundary, tokens=None, latest=False):
         st = chain_state.ChainState(CHAIN)
         sb = st.d.get("btc") if isinstance(st.d.get("btc"), dict) else None
         if not sb or sb.get("v") != STATE_VERSION:
@@ -893,16 +893,20 @@ class BtcAdapter(reg.ChainAdapter):
         cap = []
         for wid in owners:
             w9 = (sb.get("wallets") or {}).get(wid) or {}
+            if latest:
+                continue
             if not w9.get("hist_done") or w9.get("own_F") is None:
                 raise RuntimeError("[btc] 지갑 과거 훑기·소유 범위 확인 미완 — 대사 보류")
             cap.append(int(w9["own_F"]))
         self.st = st
-        own = self.ownership(sorted(set(sb["wallets"]) & set(self.rows)))
+        own = self.ownership(None if latest else sorted(set(sb["wallets"]) & set(self.rows)))
         for wid in owners:
             aw = (sb["wallets"].get(wid) or {}).get("addrs") or {}
             for addr, _spk9 in self.owned_addrs(wid, own):
                 a9 = aw.get(addr)
                 h9 = None if a9 is None else (a9.get("h") if a9.get("h") is not None else None)
+                if latest:
+                    continue
                 if h9 is None:
                     raise RuntimeError("[btc] 아직 이력을 다 본 적 없는 소유 주소(훑기 진행 중) — 대사 보류")
                 cap.append(int(h9))

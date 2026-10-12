@@ -127,33 +127,107 @@ def fetch_sol_balances(rpc_url: str, owners: list) -> dict:
         if not isinstance(lam, dict) or lam.get("value") is None:
             raise RuntimeError("getBalance value 누락")
         wb[("native", None)] = int(lam["value"])
-        for prog in ("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-                     "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"):
+        for prog in SOL_TOKEN_PROGRAMS:
             res = _rpc(rpc_url, "getTokenAccountsByOwner",
                        [o, {"programId": prog}, {"encoding": "jsonParsed"}])
-            if not isinstance(res, dict) or not isinstance(res.get("value"), list):
-                raise RuntimeError("getTokenAccountsByOwner value 형식 오류")
-            for it in res["value"]:
-                info = ((((it or {}).get("account") or {}).get("data") or {})
-                        .get("parsed") or {}).get("info") or {}
-                mint = info.get("mint")
-                ta = info.get("tokenAmount") or {}
-                if not mint:
-                    raise RuntimeError("token account mint 누락")
-                try:
-                    v = int(ta.get("amount"))
-                except (TypeError, ValueError) as e:
-                    raise RuntimeError(f"token account amount 파싱 실패 {mint[:10]}") from e
-                if v < 0:
-                    raise RuntimeError(f"token account 음수 잔고 {mint[:10]}")
-                if v:
-                    key = ("token", mint)
-                    wb[key] = wb.get(key, 0) + v
-                    if ta.get("decimals") is None:
-                        raise RuntimeError(f"token account decimals 누락 {mint[:10]}")
-                    meta[mint] = (None, int(ta["decimals"]))
+            _sol_tok_rows(res, wb, meta)
             time.sleep(0.12)
     return {"per_wallet": per, "_meta": meta}
+
+
+SOL_TOKEN_PROGRAMS = ("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb")
+
+
+def _sol_tok_rows(res, wb: dict, meta: dict) -> None:
+    if not isinstance(res, dict) or not isinstance(res.get("value"), list):
+        raise RuntimeError("getTokenAccountsByOwner value 형식 오류")
+    for it in res["value"]:
+        info = ((((it or {}).get("account") or {}).get("data") or {})
+                .get("parsed") or {}).get("info") or {}
+        mint = info.get("mint")
+        ta = info.get("tokenAmount") or {}
+        if not mint:
+            raise RuntimeError("token account mint 누락")
+        try:
+            v = int(ta.get("amount"))
+        except (TypeError, ValueError) as e:
+            raise RuntimeError(f"token account amount 파싱 실패 {mint[:10]}") from e
+        if v < 0:
+            raise RuntimeError(f"token account 음수 잔고 {mint[:10]}")
+        if v:
+            key = ("token", mint)
+            wb[key] = wb.get(key, 0) + v
+            if ta.get("decimals") is None:
+                raise RuntimeError(f"token account decimals 누락 {mint[:10]}")
+            meta[mint] = (None, int(ta["decimals"]))
+
+
+def fetch_sol_balances_fast(lanes: list, owners: list, native_url: str = None, workers: int = 4) -> dict:
+    import threading
+    owners = list(owners)
+    lanes = [u for i, u in enumerate(lanes or []) if u and u not in (lanes or [])[:i]]
+    if not lanes:
+        raise RuntimeError("SOL RPC 없음")
+    per = {o: {} for o in owners}
+    meta, bad, lock = {}, {}, threading.Lock()
+    for i in range(0, len(owners), 100):
+        chunk = owners[i:i + 100]
+        got = None
+        for u in ([native_url] if native_url else []) + [lanes[0]]:
+            try:
+                res = _rpc(u, "getMultipleAccounts", [chunk, {"encoding": "base64", "dataSlice": {"offset": 0, "length": 0}}])
+                vals = res.get("value") if isinstance(res, dict) else None
+                if not isinstance(vals, list) or len(vals) != len(chunk):
+                    raise RuntimeError("getMultipleAccounts value 형식 오류")
+                got = [0 if v is None else int(v["lamports"]) for v in vals]
+                break
+            except Exception as e:
+                got, err = None, e
+        for j, o in enumerate(chunk):
+            if got is None:
+                bad[o] = f"네이티브 조회 실패: {common.safe_err(err)[:80]}"
+            elif got[j] < 0:
+                bad[o] = "네이티브 음수"
+            else:
+                per[o][("native", None)] = got[j]
+    jobs = [(o, prog) for o in owners if o not in bad for prog in SOL_TOKEN_PROGRAMS]
+    nxt = [0]
+
+    def _work(lane):
+        order = [lane] + [u for u in lanes if u != lane]
+        while True:
+            with lock:
+                if nxt[0] >= len(jobs):
+                    return
+                o, prog = jobs[nxt[0]]
+                nxt[0] += 1
+                if o in bad:
+                    continue
+            wb9, m9, err9 = {}, {}, None
+            for u in order:
+                try:
+                    _sol_tok_rows(_rpc(u, "getTokenAccountsByOwner", [o, {"programId": prog}, {"encoding": "jsonParsed"}]), wb9, m9)
+                    err9 = None
+                    break
+                except Exception as e:
+                    wb9, m9, err9 = {}, {}, e
+            with lock:
+                if err9 is not None:
+                    bad[o] = f"토큰 조회 실패: {common.safe_err(err9)[:80]}"
+                    continue
+                for k9, v9 in wb9.items():
+                    per[o][k9] = per[o].get(k9, 0) + v9
+                meta.update(m9)
+    lane_of = [lanes[0]] * max(1, int(workers)) + lanes[1:]
+    ths = [threading.Thread(target=_work, args=(u,), name="tj-prov-sol", daemon=True) for u in lane_of]
+    for t in ths:
+        t.start()
+    for t in ths:
+        t.join()
+    if owners and len(bad) == len(owners):
+        raise RuntimeError("SOL 임시 잔고 전 지갑 실패: " + next(iter(bad.values())))
+    return {"per_wallet": {o: wb for o, wb in per.items() if o not in bad}, "_meta": meta,
+            "_hold": {o: [why] for o, why in bad.items()}}
 
 
 def fetch_bsc_balances(rpc_urls: list, wallets: list, token_cas: dict) -> dict:

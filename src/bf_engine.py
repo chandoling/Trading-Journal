@@ -367,9 +367,11 @@ HOST_POLICIES = {
                      "share": "node_ankr", "share_rate": 12.0, "share_burst": 12, "share_xproc": True},
     "*.quiknode.pro": {"rate": 5.0, "burst": 5, "conc": 3, "call_rate": 10.0, "call_burst": 10,
                        "share": "node_quicknode", "share_rate": 10.0, "share_burst": 10, "share_xproc": True},
-    "*.g.alchemy.com": {"rate": 2.0, "burst": 2, "conc": 2, "call_rate": 2.0, "call_burst": 2,
-                        "share": "node_alchemy", "share_rate": 2.0, "share_burst": 2, "share_xproc": True,
-                        "call_cost": {"alchemy_getAssetTransfers": 2}},
+    "*.g.alchemy.com": {"rate": 6.0, "burst": 2, "conc": 3, "call_rate": 10.0, "call_burst": 2,
+                        "share": "node_alchemy", "share_rate": 10.0, "share_burst": 2, "share_xproc": True,
+                        "call_cost": {"*": 2, "alchemy_getTokenBalances": 1, "alchemy_getTokenMetadata": 1, "eth_getBalance": 1, "eth_blockNumber": 1,
+                                      "eth_getTransactionCount": 1, "eth_getTransactionReceipt": 1, "eth_getBlockByNumber": 1, "eth_call": 2,
+                                      "eth_getLogs": 3, "alchemy_getAssetTransfers": 6, "debug_*": 4, "trace_*": 4}},
     "rpc.ankr.com#adv": {"rate": 0.6, "burst": 2, "conc": 1, "call_rate": 0.6, "call_burst": 2,
                          "share": "node_ankr_adv", "share_rate": 0.6, "share_burst": 2, "share_xproc": True},
     "bsc.rpc.blxrbdn.com": {"rate": 2.0, "burst": 2, "conc": 2},
@@ -588,9 +590,21 @@ class HostGate:
         return cap
 
     def gate_cost(self, cost: int = 1, methods=None) -> int:
-        if not self.call_cost or not methods:
+        if not self.call_cost:
             return cost
-        return max(int(cost or 1), sum(self.call_cost.get(str(m), 1) for m in methods))
+        dflt = self.call_cost.get("*", 1)
+        if not methods:
+            return int(cost or 1) * dflt if "*" in self.call_cost else cost
+
+        def one(m):
+            m = str(m)
+            if m in self.call_cost:
+                return self.call_cost[m]
+            for k9, v9 in self.call_cost.items():
+                if k9.endswith("*") and len(k9) > 1 and m.startswith(k9[:-1]):
+                    return v9
+            return dflt
+        return max(int(cost or 1), sum(one(m) for m in methods))
 
     def acquire(self, prio: str = "fg", deadline: float = None, cost: int = 1):
         if deadline is None and isinstance(self.share, _XprocSharedBucket):
