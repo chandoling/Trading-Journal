@@ -43,7 +43,7 @@ _real_fast_sol = recon.fetch_sol_balances
 recon.fetch_sol_balances_fast = lambda lanes, ws, native_url=None, **k: {"per_wallet": {w: {("native", None): 5 * 10 ** 8} for w in ws}, "_meta": {}}
 recon.fetch_sol_balances = lambda url, ws: {"per_wallet": {w: {("native", None): 5 * 10 ** 8} for w in ws}, "_meta": {}}
 _real_stake_live = core.Core._prov_sol_stake_live
-core.Core._prov_sol_stake_live = staticmethod(lambda url, pks, native_url=None: None)
+core.Core._prov_sol_stake_live = staticmethod(lambda url, pks, native_url=None: {pk: {PK1: 200 * 10 ** 9}.get(pk, 0) for pk in pks})
 SP = os.path.join(common.STATE_DIR, "sol_stake.json")
 json.dump({"ts": int(NOW - 600), "accounts": {
     PK1: {"w": SW, "lamports": 200 * 10 ** 9, "state": "active"},

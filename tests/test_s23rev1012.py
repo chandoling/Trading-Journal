@@ -95,11 +95,15 @@ if len(sys.argv) > 2 and sys.argv[1] == "--case":
         cash0 = 100000 if side == "buy" else 0
         if side == "sell":
             post("bithumb", ts - 2000, "USDT", 100)
-        C.conn.execute("INSERT INTO meta(k, v) VALUES('recon_done_exf_bithumb', ?)", (str(ts - 3000),))
+        if not var.startswith("pre"):
+            C.conn.execute("INSERT INTO meta(k, v) VALUES('recon_done_exf_bithumb', ?)", (str(ts - 3000),))
         fee_pre = (Decimal(fee) * pre / 50000) if fee else 0
         cash_snap = float(cash0 + (-1 if side == "buy" else 1) * pre - fee_pre)
-        snap("bithumb", ts, {"KRW": cash_snap})
-        trades = [{"created_at": iso(t), "funds": str(f), "volume": str(f // 1000), "price": "1000"} for t, f in legs]
+        bal9 = {"KRW": cash_snap}
+        if var.startswith("pre"):
+            bal9["USDT"] = float(pre // 1000 if side == "buy" else 100 - pre // 1000)
+        snap("bithumb", ts, bal9)
+        trades = [{"created_at": iso(t), "funds": str(f), "price": "1000", **({} if var == "prenovol" else {"volume": str(f // 1000)})} for t, f in legs]
         order = {"uuid": "c-" + case, "market": "KRW-USDT", "side": "bid" if side == "buy" else "ask", "state": "done", "ord_type": "limit",
                  "created_at": iso(ts - 4000), "executed_volume": "50", "executed_funds": "50000" if var != "summis" else "49000",
                  "paid_fee": str(fee), "trades_count": len(trades) + (1 if var == "cntmis" else 0), "trades": trades}
@@ -123,7 +127,8 @@ if len(sys.argv) > 2 and sys.argv[1] == "--case":
         C.conn.commit()
         f, b = build()
         krw = sum(float(r.get("krw") or 0) for r in f.get("fiats") or [] if r.get("ex") == "빗썸")
-        out = {"krw": krw, "total": round(krw + usd_total(f) * 1000, 2), "legs": fills[0].get("cashlegs"),
+        usdt9 = sum(float(r.get("qty") or 0) for r in (f.get("coins") or []) + (f.get("stables") or []) if str(r.get("sym") or "").upper() == "USDT")
+        out = {"krw": krw, "total": round(krw + usd_total(f) * 1000, 2), "legs": fills[0].get("cashlegs"), "usdt": usdt9,
                "repost_same": C.conn.execute("SELECT COUNT(*) FROM postings").fetchone()[0] == n_post,
                "tl_split": len(web.StateBuilder()._bithumb_krw_timeline(C.conn) or ()),
                "tl_order": len(web.StateBuilder()._bithumb_krw_timeline(C.conn, split=False) or ())}
@@ -187,6 +192,16 @@ for var in ("cntmis", "summis"):
     r = child(f"krw_buy_cross_{var}")
     T.chk("_err" not in r and not r.get("legs"), f"R1 체결 정보 불완전({var}) = 체결 조각 안 만듦(종전 주문 시각 하나)", r)
 
+for side in ("buy", "sell"):
+    for where in ("before", "cross", "after"):
+        r = child(f"krw_{side}_{where}_pre")
+        T.chk(r.get("krw") == 50000.0 and abs(float(r.get("usdt") or 0) - 50.0) < 1e-9 and r.get("total") == 100000.0 and not r.get("net"),
+              f"R1-B 빗썸 첫 대사 전 {side} 스냅숏 {where} = 원화 5만 · 코인 50 · 총 10만", r)
+for side in ("buy", "sell"):
+    r = child(f"krw_{side}_cross_prenovol")
+    T.chk(r.get("legs") and all(len(l9) == 2 for l9 in r["legs"]) and abs(float(r.get("usdt") or 0) - 50.0) < 1e-9 and r.get("total") == 100000.0,
+          f"R1-B 수량 없는 조각(이 판 전 꼴)이 스냅숏 가로지름 = 그 심볼 보류(원장 그대로) · {side} 코인 50 · 총 10만", r)
+
 for mode in ("near", "far", "zero", "equal", "mixed"):
     r = child(f"tr_{mode}")
     T.chk(r.get("total") == r.get("expect") and not r.get("net"), f"R2 받는 거래소 첫 대사 전 전송 중 ({mode}) = {r.get('expect')}", r)
@@ -209,8 +224,12 @@ LIVE = {}
 CALLS = []
 
 
+ORDER = []
+
+
 def fake_rpc(u, method, params, **k):
     CALLS.append((u, method))
+    ORDER.append("stake")
     if method != "getMultipleAccounts" or LIVE.get("_fail"):
         raise RuntimeError("시험: 조회 실패")
     return {"value": [None if LIVE.get(pk) is None else {"lamports": LIVE[pk]} for pk in params[0]]}
@@ -234,11 +253,21 @@ def r3(name, *, wallet_now, stake_snap, stake_now, records, expect, fail=False):
     if fail:
         LIVE["_fail"] = True
     real_fast = recon.fetch_sol_balances_fast
-    recon.fetch_sol_balances_fast = lambda *a, **k: {"per_wallet": {SW: {("native", None): wallet_now * 10 ** 9}}, "_meta": {}}
+    order9 = ORDER
+    del ORDER[:]
+    recon.fetch_sol_balances_fast = lambda *a, **k: order9.append("wallet") or {"per_wallet": {SW: {("native", None): wallet_now * 10 ** 9}}, "_meta": {}}
+    n9 = len(CALLS)
     try:
         bal = core.Core._prov_sol_fetch(["https://sol.invalid"], [SW], now=NOW, native_url="https://head.invalid")
+    except RuntimeError as e9:
+        bal = {"_exc": str(e9)}
     finally:
         recon.fetch_sol_balances_fast = real_fast
+    if fail:
+        T.chk("_exc" in bal and "wallet" not in order9, name, bal)
+        cb.close()
+        return
+    T.chk(len(CALLS) > n9 and order9[-1:] == ["wallet"] and order9[:1] == ["stake"], name + " — 스테이크 다시 읽기가 지갑 조회보다 먼저", (CALLS[n9:], order9))
     pk9 = core.Core._prov_pack(bal, "chain", NOW - 5, req=[SW], t1=NOW, kind="sol")
     pk9["stake_ts"] = int(bal.get("_stake_ts") or 0)
     pk9["stake_live"] = int(bal.get("_stake_live") or 0)
@@ -261,8 +290,8 @@ r3("R3 예치(지갑 100 → 스테이크) 원장에 아직 없음 = 100 (종전
 r3("R3 예치 원장에 있음 = 100", wallet_now=0, stake_snap=0, stake_now=100,
    records=[(LOC_W, 100, NOW - 2000), (LOC_W, -100, T_MV), (LOC_S, 100, T_MV)], expect=100)
 r3("R3 닫힌 계정(지금 없음) = 0 · 지갑 100 = 100", wallet_now=100, stake_snap=100, stake_now=None, records=[], expect=100)
-r3("R3 다시 읽기 실패 = 스냅숏 값 + 스냅숏 시각 경계(종전 · 원장에 든 인출 = 100)", wallet_now=100, stake_snap=100, stake_now=0, fail=True,
-   records=[(LOC_S, 100, NOW - 2000), (LOC_S, -100, T_MV), (LOC_W, 100, T_MV)], expect=100)
+r3("R3-F (외부 검수 S24) 다시 읽기 실패 = 이 바퀴 SOL 임시 잔고 실패(예외 · 지갑 조회도 안 함 · 묵은 스냅숏 값 안 씀)", wallet_now=100, stake_snap=100, stake_now=0, fail=True,
+   records=[], expect=None)
 T.chk(all(m == "getMultipleAccounts" for _u, m in CALLS) and CALLS and CALLS[0][0] == "https://head.invalid",
       "R3 다시 읽기 = getMultipleAccounts(head 차선 먼저 · 계정 100개당 1콜)", CALLS[:6])
 recon._rpc = _real_rpc

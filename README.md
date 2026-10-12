@@ -30,7 +30,7 @@
 | 3 | 키 준비 — Solana 지갑이 있으면 Helius, EVM 지갑이 있으면 Etherscan·Alchemy·Ankr 무료 키가 필수(EVM 키 셋은 경고만 — 없어도 돌지만 옛 기록이 늦거나 옛 보유 토큰 찾기·쉬는 지갑 입금 확인이 약해짐), 나머지는 선택 | [키 표](#3-키-준비--env-와-configjson) · 거래소 키는 **조회 권한만** |
 | 4 | 실행 | `pm2 start ecosystem.config.js` (pm2 없이: [아래](#4-실행--설정-마법사)) |
 | 5 | 화면 열기 → 첫 비밀번호 만들기(**설정 코드** = `cat state/auth_setup_code`) → 설정 마법사에서 지갑·키·거래소·텔레그램 | **http://127.0.0.1:8023/** (`web.port` 를 바꿨으면 그 번호) |
-| 6 | 첫 백필 기다리기 — 보통 수십 분, 많으면 몇 시간(총자산은 몇 분 안에 지금 잔고로 보이고 · 최신 거래는 첫 주기부터 먼저, 옛 기록은 뒤에서 채워요) | 화면 위 **상태 패널** |
+| 6 | 첫 백필 기다리기 — 보통 수십 분, 많으면 몇 시간(총자산은 지금 잔고로 보통 몇 분, 전부 들기까지 길면 30분쯤 · 최신 거래는 첫 주기부터 먼저, 옛 기록은 뒤에서 채워요) | 화면 위 **상태 패널** |
 | 7 | 남은 '원가 미확인'만 정리 | **미매칭** 탭 |
 
 먼저 구경만 하려면 `bash tools/setup.sh --demo` — 합성 데이터로 화면만 띄우고 아무것도 저장하지 않습니다(포트를 바꾸려면 `TJ_PORT=8024 bash tools/setup.sh --demo`).
@@ -73,7 +73,7 @@
 | ![변동 분해 시트 — 전일 대비 줄을 누르면 무엇 때문인지 · 금액은 랜덤값](docs/screenshots/62_change_breakdown_sheet.png)<br><sub>금액은 랜덤값</sub> | ![수집 한계 — 거래소·체인별로 받는 범위와 못 받는 것(긴 이유는 접힘)](docs/screenshots/63_settings_collection_limits.png) |
 | ![체인별 조회 — 체인마다 조회 켜기·끄기 스위치, 보낸 거래가 지갑마다 10번 이하면 '끄는 걸 추천해요', 지갑 수에 맞춘 확인 주기·하루 예상 호출·꺼 둔 체인](docs/screenshots/48_settings_chains.png) | |
 
-이번 판(2026-10-12 (6) · 외부 검수 표시 정합성 3건 — 빗썸 부분 체결 원화 · 첫 대사 전 전송 중 · Solana 스테이크 지금 잔고)은 [CHANGELOG.md › 2026-10-12 (6)](CHANGELOG.md#2026-10-12-6--외부-검수-표시-정합성-3건빗썸-부분-체결--첫-대사-전-전송-중--solana-스테이크) 에 있어요.
+이번 판(2026-10-12 (7) · 외부 재검수 잔여 2건 — 빗썸 첫 대사 전 코인 · Solana 스테이크 조회 실패·순서 · 최초 잔고 30분 안내)은 [CHANGELOG.md › 2026-10-12 (7)](CHANGELOG.md#2026-10-12-7--외부-재검수-잔여-2건빗썸-첫-대사-전-코인--solana-스테이크-조회-실패순서--최초-잔고-30분-안내), 그 전 판(2026-10-12 (6) · 외부 검수 표시 정합성 3건)은 [CHANGELOG.md › 2026-10-12 (6)](CHANGELOG.md#2026-10-12-6--외부-검수-표시-정합성-3건빗썸-부분-체결--첫-대사-전-전송-중--solana-스테이크) 에 있어요.
 바로 전 판(2026-10-12 (5) · 새 설치 지금 총자산 몇 분 안 · 빗썸 원화 예수금 · Alchemy 속도 칸)에 더해진 것 — 자세한 설명은 [CHANGELOG.md › 2026-10-12 (5)](CHANGELOG.md#2026-10-12-5--새-설치-지금-총자산-몇-분-안--빗썸-원화-예수금--alchemy-속도-칸) 에 있어요.
 사진은 이번 판(2026-10-12 (5)) 화면으로 다시 찍었어요(금액 랜덤값 모드 · 가짜 주소) — 화면이 바뀐 20장(대시보드·매매일지·일별 기록·명세·가스·긴 곡선·상태 패널·모바일·타임머신·결산·보관처 서랍·변동 분해 시트 등)은 새로, 나머지는 지난 판(2026-10-12 (3)) 화면 그대로예요.
 
@@ -358,7 +358,7 @@ pm2 없이 돌려도 상태 패널은 각 유닛이 남기는 `state/runner_<유
   - 화면 위의 **상태 표시줄 → 상태 패널 열기** — 수집기별 '과거 기록 수집 중'·지연·오류
   - **설정 › 수집 한계** — 거래소·체인별로 어디까지 받았고 무엇을 못 받는지([docs/COLLECTION_LIMITS.md](docs/COLLECTION_LIMITS.md) 와 같은 내용)
   - 로그: `pm2 logs tj-core` · `pm2 logs tj-evm` 등
-- 옛 기록을 다 받기 전(그 체인·거래소 첫 잔고 대사 전)에도 **오늘 보유·총자산은 기동 몇 분 안에 지금 실제 잔고**로 보여요(보관처 '지금 잔고(옛 기록 받는 중)' · 거래소는 '거래소 지금 잔고(옛 기록 받는 중)'). 원가·손익·지난날 곡선은 옛 기록을 다 받으면 정확하게 맞춰지고, 대시보드 곡선 아래에 진행률·남은 시간이 보여요.
+- 옛 기록을 다 받기 전(그 체인·거래소 첫 잔고 대사 전)에도 **오늘 보유·총자산은 지금 실제 잔고**로 보여요(보관처 '지금 잔고(옛 기록 받는 중)' · 거래소는 '거래소 지금 잔고(옛 기록 받는 중)') — 큰 몫은 보통 기동 몇 분 안, **최초 잔고가 다 보이기까지는 30분쯤** 잡으세요(새로 찾은 토큰은 시세가 붙어야 · 활동 점검이 자동으로 켜는 체인은 점검 뒤에 들어와요). 원가·손익·지난날 곡선은 옛 기록을 다 받으면 정확하게 맞춰지고, 대시보드 곡선 아래에 진행률·남은 시간이 보여요.
 - 백필이 끝나기 전에는 '원가 미확인'·잔고 차이가 많이 보이는 게 정상입니다. 끝난 뒤에도 남는 것만 **미매칭** 탭에서 처리하세요.
 - 텔레그램을 연결해도 동기화·과거 기록 가져오기 같은 봇 내부 소식은 텔레그램으로 보내지 않습니다(상태 패널에만 — 처음 다 가져왔을 때 한 통만). 자세한 건 [텔레그램 알림 설정](#텔레그램-알림-설정).
 
@@ -1002,7 +1002,7 @@ tracking and a review queue for unknown-cost inflows and spam tokens. The UI is 
   Progress is shown in the status panel and in Settings > collection limits. Every collection path (explorers, EVM RPC chains, BNB Chain, Solana) looks at
   the newest blocks first and fills old history in a side lane with whatever quota real-time checks leave, so new transactions show up within minutes even
   on the first day (a fresh install never starts on Blockscout). Until a chain's or exchange's old history is in, today's holdings and total use the actual current
-  balance (shown within minutes of starting); cost, PnL and past curves become exact once old history is complete (progress and time left are shown under the curve).
+  balance (most of it within minutes of starting; allow about 30 minutes until every initial balance shows — newly found tokens need a price and auto-enabled chains join after their check); cost, PnL and past curves become exact once old history is complete (progress and time left are shown under the curve).
 - **Hyperliquid · NFT · prices:** Hyperliquid (HyperCore spot fills/transfers, perps cash and staked HYPE booked like an exchange and reconciled —
   opt in with `"hyperliquid": {"spot": true}`); NFT holdings with floor prices (auto-tracks collections with a floor and recent volume,
   candidate list, spam filtering with reasons, watch-only collections, an "include in total" switch that is off by default, CryptoPunks and
@@ -1034,7 +1034,7 @@ tracking and a review queue for unknown-cost inflows and spam tokens. The UI is 
 - **Borrowed coins:** `loan_short` in `config.json` — confirmed exchange-loan periods only, e.g. (synthetic) `[{"exchange": "okx", "asset": "ETH", "from": "YYYY-MM-DD", "to": "YYYY-MM-DD"}]` —
   gives coins borrowed and withdrawn (exchange balance pushed below zero, later refilled on the same exchange) a cost at the borrow-time price; the difference on refill is realized
   (a "대출 상환" row in the statement; display calculation only, with first-seen pricing on — the default; empty = off).
-- **Release notes:** what changed in each release (three display fixes from an external review — Bithumb KRW with partial fills across a balance snapshot, transfers in flight to an exchange before its first reconciliation, Solana stake accounts re-read with current balances — on 2026-10-12 (6); a fresh install shows today's total from current balances within minutes — exchange balances read first, exchange and all-chain on-chain current balances before the first reconciliation, no double-counted transfers in flight, Bithumb KRW rolled forward from its snapshot, a 20 CU Alchemy gate slot, 20 screenshots retaken on this release (the rest are from 2026-10-12 (3)) — on 2026-10-12 (5); the spot-realized gas line renamed "가스(매매 외)" (gas, non-trading) with a dimmed reference line below it
+- **Release notes:** what changed in each release (two remaining first-reconciliation display fixes from a re-review — Bithumb coin quantity with partial fills across a snapshot, Solana stake read before the wallet and a failed re-read skips that round — plus an "allow about 30 minutes for initial balances" note on 2026-10-12 (7); three display fixes from an external review — Bithumb KRW with partial fills across a balance snapshot, transfers in flight to an exchange before its first reconciliation, Solana stake accounts re-read with current balances — on 2026-10-12 (6); a fresh install shows today's total from current balances within minutes — exchange balances read first, exchange and all-chain on-chain current balances before the first reconciliation, no double-counted transfers in flight, Bithumb KRW rolled forward from its snapshot, a 20 CU Alchemy gate slot, 20 screenshots retaken on this release (the rest are from 2026-10-12 (3)) — on 2026-10-12 (5); the spot-realized gas line renamed "가스(매매 외)" (gas, non-trading) with a dimmed reference line below it
   for the day's trading gas and fees, already in cost basis (buys) or PnL (sells) and outside the sum — display only, `pm2 restart tj-web` after `git pull`, screenshots are from 2026-10-12 (3) — on 2026-10-12 (4); a screen polish pass — one number font, unified titles and colors, long explanations folded into one line
   plus "자세히", no jump-to-top when tapping lower settings rows —, an exchange-retention warning when fetching older history, an AI review "fill all" button and small
   external-review fixes — deferred receipt evaluations, no redirects on authenticated requests, tightened `state/` and `.env` permissions, prefetch of today's receipts

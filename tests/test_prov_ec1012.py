@@ -125,6 +125,7 @@ def fake_plan(chain, kind, ws, mode=None, latest=False):
 
 import recon
 recon.fetch_sol_balances_fast = lambda lanes, ws, native_url=None, **k: {"per_wallet": {w: {("native", None): 5} for w in ws}, "_meta": {}}
+core.Core._prov_sol_stake_live = staticmethod(lambda url, pks, native_url=None: {pk: 7 for pk in pks})
 c._recon_fetch_plan = fake_plan
 if os.path.exists(SP):
     os.remove(SP)

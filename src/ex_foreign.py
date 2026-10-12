@@ -2316,13 +2316,17 @@ def _bithumb_cashlegs(r, funds):
             ts = acct_norm.fill_ts({"trades": [t]}) if isinstance(t, dict) else None
             if not ts or t.get("funds") in (None, ""):
                 return None
-            legs.append((int(ts), Decimal(str(t["funds"]))))
-        if abs(sum(d for _t, d in legs) - Decimal(str(funds))) > Decimal("0.5"):
+            v9 = t.get("volume")
+            legs.append((int(ts), Decimal(str(t["funds"])), Decimal(str(v9)) if v9 not in (None, "") else None))
+        if abs(sum(d for _t, d, _v in legs) - Decimal(str(funds))) > Decimal("0.5"):
             return None
+        ev9 = r.get("executed_volume")
+        vol_ok = all(v is not None and v > 0 for _t, _d, v in legs) and ev9 not in (None, "") \
+            and abs(sum(v for _t, _d, v in legs) - Decimal(str(ev9))) <= Decimal("0.00000001")
     except (TypeError, ValueError, InvalidOperation):
         return None
     legs.sort(key=lambda x: x[0])
-    return [[t, str(d)] for t, d in legs]
+    return [[t, str(d), str(v)] if vol_ok else [t, str(d)] for t, d, v in legs]
 
 
 _BITHUMB_ASC_CACHE = {}

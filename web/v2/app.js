@@ -6706,7 +6706,7 @@
     const tg = S.D.taxGas;
     if (!tg) return '';
     const on = tg.on !== false;
-    return '<div class="srow"><div style="min-width:0"><b>가스를 원가·실현에 반영</b><div class="cap">' + (on ? '켬 · ' + esc(gasRuleTxt(tg)) + ' · 반영 ' + m(Math.min(num(tg.total), num(tg.inCost) + num(tg.inRealized) + num(tg.expense))) + ' / 온체인 가스 ' + m(num(tg.total)) : '끔 · 가스는 가스·수수료 탭에 따로 표시만 해요(실현·세금 명세는 가스 전)') + '</div></div><span class="sp"></span><button class="sw2' + (on ? ' on' : '') + '" data-a="gasCost" role="switch" aria-checked="' + on + '" aria-label="가스를 원가·실현에 반영"></button></div>';
+    return '<div class="srow"><div style="min-width:0"><b>가스를 원가·실현에 반영</b><div class="cap">' + (on ? '켬 · ' + esc(gasRuleTxt(tg)) + ' · 반영 ' + m(Math.min(num(tg.total), num(tg.inCost) + num(tg.inRealized) + num(tg.expense))) + ' / 온체인 가스 ' + m(num(tg.total)) : '끔 · 가스는 가스·수수료 탭에 따로 표시만 해요(실현·세금 명세는 가스 전 · 거래소 체결 수수료는 끔과 무관하게 원가·실현에 그대로)') + '</div></div><span class="sp"></span><button class="sw2' + (on ? ' on' : '') + '" data-a="gasCost" role="switch" aria-checked="' + on + '" aria-label="가스를 원가·실현에 반영"></button></div>';
   }
   const offcDesc = n => n + ' 사용자끼리 체인 밖 이체예요. 내 다른 ' + n + ' 계정과 주고받은 것이면 켜세요 — 보낸 코인의 원가가 돌아온 입금에 이어져요(내 계정으로 가정). 남에게 보낸 게 섞여 있으면 켜지 마세요.';
   function offcStat(o) {
@@ -7078,7 +7078,7 @@
     if (tg) {
       const on = tg.on !== false;
       h += sxIt('sx-cost-gas', '가스를 원가·실현에 반영', on ? '반영 ' + m(Math.min(num(tg.total), num(tg.inCost) + num(tg.inRealized) + num(tg.expense)), { compact: true }) + ' / 온체인 가스 ' + m(num(tg.total), { compact: true }) : '끔 · 가스는 가스·수수료 탭에 따로 표시만',
-        sxSw('gasCost', on, '가스를 원가·실현에 반영'), { exp: () => '<div class="cap">' + (on ? esc(gasRuleTxt(tg)) : '가스는 가스·수수료 탭에 따로 표시만 해요(실현·세금 명세는 가스 전)') + '</div>' });
+        sxSw('gasCost', on, '가스를 원가·실현에 반영'), { exp: () => '<div class="cap">' + (on ? esc(gasRuleTxt(tg)) : '가스는 가스·수수료 탭에 따로 표시만 해요(실현·세금 명세는 가스 전 · 거래소 체결 수수료는 끔과 무관하게 원가·실현에 그대로)') + '</div>' });
     }
     h += (D.offc || []).map(o => sxIt('sx-cost-offc-' + sxId(o.ex), esc(o.name) + ' 오프체인 = 내 계정 간 이동',
       '<span class="pvx">' + (o.on ? '가정 중 · ' + o.inhN + '/' + o.depN + '건 원가 이어받음' : (o.answered ? '끔' : '아직 답 안 함') + ' · 출금 ' + o.wdN + ' · 입금 ' + o.depN) + '</span>',
@@ -9751,7 +9751,7 @@
       if (w) { const c = [...document.querySelectorAll('#view [data-a="wkPick"]')].find(x => x.getAttribute('data-v') === w.wk && (!w.f || x.getAttribute('data-f') === w.f)); if (c) { try { c.focus({ preventScroll: true }); } catch (e) {  } } } },
     wkMore: el => { S.wkMore = S.wkMore === el.dataset.v ? null : el.dataset.v; renderView(); },
     wkDay: el => { wkOff(); S.day = el.dataset.v; S.calYM = ymOf(S.day) || S.calYM; S.dayEvLimit = 20; renderView(); },
-    gasCost: () => { const on = !(S.D.taxGas && S.D.taxGas.on !== false); confirmAsk({ title: '가스 반영을 ' + (on ? '켤까요?' : '끌까요?'), body: on ? '스왑 매수 가스는 취득 원가에, 스왑 매도 가스는 그 매도의 실현에서, 매매 외 가스(실패·승인·전송·브릿지·LP)는 그날 실현에서 빼요. 실현손익·세금 명세·일별 기록이 다시 계산돼요.' : '가스를 원가·실현에서 빼고 가스·수수료 탭에 따로 표시만 해요. 실현손익·세금 명세·일별 기록이 다시 계산돼요.', ok: on ? '켜기' : '끄기', run: () => post('/api/gas_in_cost', { on }, '가스 반영 ' + (on ? '켬' : '끔') + ' · 다시 계산해요') }); },
+    gasCost: () => { const on = !(S.D.taxGas && S.D.taxGas.on !== false); confirmAsk({ title: '가스 반영을 ' + (on ? '켤까요?' : '끌까요?'), body: on ? '스왑 매수 가스는 취득 원가에, 스왑 매도 가스는 그 매도의 실현에서, 매매 외 가스(실패·승인·전송·브릿지·LP)는 그날 실현에서 빼요. 실현손익·세금 명세·일별 기록이 다시 계산돼요.' : '온체인 가스를 원가·실현에서 빼고 가스·수수료 탭에 따로 표시만 해요(거래소 체결 수수료는 그대로 원가·실현에 반영). 실현손익·세금 명세·일별 기록이 다시 계산돼요.', ok: on ? '켜기' : '끄기', run: () => post('/api/gas_in_cost', { on }, '가스 반영 ' + (on ? '켬' : '끔') + ' · 다시 계산해요') }); },
     revLen: async el => { const [kind, len] = String(el.dataset.v || '').split(':'), rl = S.D && S.D.reviewLen;
       const it = rl && (REV_LEN[kind] || []).find(x => x[0] === len);
       if (!it || rl[kind] === len) return;

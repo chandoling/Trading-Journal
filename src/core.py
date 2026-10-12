@@ -3028,7 +3028,6 @@ class Core:
 
     @staticmethod
     def _prov_sol_fetch(url, wallets: list, stake_path: str = None, now: float = None, native_url: str = None) -> dict:
-        r = recon.fetch_sol_balances_fast(url if isinstance(url, list) else [url], wallets, native_url=native_url)
         try:
             sd = common.read_json(stake_path or os.path.join(common.STATE_DIR, "sol_stake.json"), {}) or {}
         except (Exception, SystemExit):
@@ -3038,20 +3037,25 @@ class Core:
         except (TypeError, ValueError):
             fresh = False
         accts = sd.get("accounts") if fresh and isinstance(sd.get("accounts"), dict) else {}
+        ws = set(wallets)
+        mine = sorted(pk for pk, a in accts.items() if pk and isinstance(a, dict) and a.get("w") in ws)
+        live = Core._prov_sol_stake_live(url, mine, native_url) if mine else {}
+        if live is None:
+            raise RuntimeError(f"SOL 스테이크 계정 {len(mine)}개 지금 잔고 조회 실패 — 이 바퀴 SOL 임시 잔고 보류(다음 바퀴 재시도)")
+        r = recon.fetch_sol_balances_fast(url if isinstance(url, list) else [url], wallets, native_url=native_url)
         try:
             r["_stake_ts"] = int(float(sd.get("ts") or 0)) if fresh and isinstance(sd.get("accounts"), dict) else 0
         except (TypeError, ValueError):
             r["_stake_ts"] = 0
-        ws = set(wallets)
         per = r.setdefault("per_wallet", {})
-        mine = sorted(pk for pk, a in accts.items() if pk and isinstance(a, dict) and a.get("w") in ws)
-        live = Core._prov_sol_stake_live(url, mine, native_url) if mine else None
-        if live is not None:
+        if mine:
             r["_stake_live"] = 1
         for pk in mine:
             a = accts[pk]
+            if a["w"] in ((r.get("_hold") or {})):
+                continue
             try:
-                lam = int(live[pk]) if live is not None else int(a.get("lamports") or 0)
+                lam = int(live[pk])
             except (TypeError, ValueError, KeyError):
                 continue
             if lam >= 0:
@@ -3074,7 +3078,7 @@ class Core:
                     got = [0 if v is None else int(v["lamports"]) for v in vals]
                     break
                 except Exception as e:
-                    log.info("SOL 스테이크 지금 잔고 조회 실패(계정 %d개 · 다음 차선 → 끝내 실패면 스냅숏 값): %s", len(chunk), common.safe_err(e)[:80])
+                    log.info("SOL 스테이크 지금 잔고 조회 실패(계정 %d개 · 다음 차선 → 끝내 실패면 이 바퀴 SOL 임시 잔고 실패): %s", len(chunk), common.safe_err(e)[:80])
             if got is None:
                 return None
             out.update(zip(chunk, got))

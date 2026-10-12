@@ -3293,8 +3293,9 @@ class StateBuilder:
     @staticmethod
     def _exf_prov_ledger(conn, ex, bts):
         out9, amb9, tot9 = {}, set(), {}
-        for qb9, ts9, sym9, dec9, gid9, aid9 in conn.execute(
-                "SELECT p.qty_base, p.event_ts, a.symbol, a.decimals, a.group_id, p.asset_id FROM postings p"
+        legs9 = StateBuilder._exf_trade_legs(conn, ex)
+        for qb9, ts9, sym9, dec9, gid9, aid9, sns9, sid9, lsq9 in conn.execute(
+                "SELECT p.qty_base, p.event_ts, a.symbol, a.decimals, a.group_id, p.asset_id, p.source_ns, p.source_id, p.leg_seq FROM postings p"
                 " JOIN assets a ON a.asset_id = p.asset_id WHERE p.location=?", (f"exchange:{ex}",)).fetchall():
             su9 = str(sym9 or "").upper()
             if not su9:
@@ -3309,20 +3310,64 @@ class StateBuilder:
             except (TypeError, ValueError):
                 amb9.add(su9)
                 continue
-            if abs(t9 - int(bts)) <= 60:
-                amb9.add(su9)
-                continue
-            if t9 > int(bts):
-                continue
-            g9 = gid9 if gid9 is not None else -int(aid9)
-            per9 = out9.setdefault(su9, {})
-            if per9.get(g9, 0) is None:
-                continue
-            try:
-                per9[g9] = per9.get(g9, Decimal(0)) + Decimal(str(qb9)) / (Decimal(10) ** (8 if dec9 is None else int(dec9)))
-            except (TypeError, ValueError, InvalidOperation):
-                per9[g9] = None
+            parts9 = [(t9, qb9)]
+            lg9 = legs9.get(str(sid9)) if sns9 == f"{ex}:trade" and lsq9 == 0 else None
+            if lg9:
+                if all(len(l9) > 2 for l9 in lg9):
+                    try:
+                        vs9 = [Decimal(str(l9[2])) for l9 in lg9]
+                        vt9, q9i, acc9, parts9 = sum(vs9), int(qb9), 0, []
+                        for i9, l9 in enumerate(lg9):
+                            p9 = (q9i - acc9) if i9 == len(lg9) - 1 else int(Decimal(q9i) * vs9[i9] / vt9)
+                            acc9 += p9
+                            parts9.append((int(l9[0]), p9))
+                    except (TypeError, ValueError, InvalidOperation, ZeroDivisionError, IndexError):
+                        amb9.add(su9)
+                        continue
+                else:
+                    try:
+                        sd9 = {("b" if int(l9[0]) < int(bts) - 60 else "a" if int(l9[0]) > int(bts) + 60 else "m") for l9 in lg9}
+                    except (TypeError, ValueError, IndexError):
+                        sd9 = {"m"}
+                    if "m" in sd9 or len(sd9) > 1:
+                        amb9.add(su9)
+                        continue
+            for t9, q9 in parts9:
+                if abs(t9 - int(bts)) <= 60:
+                    amb9.add(su9)
+                    break
+                if t9 > int(bts):
+                    continue
+                g9 = gid9 if gid9 is not None else -int(aid9)
+                per9 = out9.setdefault(su9, {})
+                if per9.get(g9, 0) is None:
+                    continue
+                try:
+                    per9[g9] = per9.get(g9, Decimal(0)) + Decimal(str(q9)) / (Decimal(10) ** (8 if dec9 is None else int(dec9)))
+                except (TypeError, ValueError, InvalidOperation):
+                    per9[g9] = None
         return out9, amb9, tot9
+
+    @staticmethod
+    def _exf_trade_legs(conn, ex) -> dict:
+        out, rev = {}, {}
+        try:
+            rows = conn.execute("SELECT uuid, revision, payload FROM raw_ex WHERE exchange=? AND kind='trade' AND payload LIKE '%cashlegs%'", (ex,)).fetchall()
+        except Exception:
+            return out
+        for u9, r9, pl9 in rows:
+            try:
+                if u9 in rev and int(r9) <= rev[u9]:
+                    continue
+                lg9 = (json.loads(pl9) or {}).get("cashlegs")
+                rev[u9] = int(r9)
+                if isinstance(lg9, list) and len(lg9) >= 2 and all(isinstance(l9, list) and len(l9) >= 2 for l9 in lg9):
+                    out[str(u9)] = lg9
+                else:
+                    out.pop(str(u9), None)
+            except (TypeError, ValueError):
+                continue
+        return out
 
     @staticmethod
     def _wdt_prov_mark(wdt, cs, xs, xblk=None) -> int:
@@ -14962,8 +15007,8 @@ class StateBuilder:
         if not isinstance(legs, list) or len(legs) < 2:
             return None
         try:
-            lg = [(int(t), Decimal(str(f))) for t, f in legs]
-        except (TypeError, ValueError, InvalidOperation):
+            lg = [(int(l9[0]), Decimal(str(l9[1]))) for l9 in legs]
+        except (TypeError, ValueError, InvalidOperation, IndexError):
             return None
         tot = sum(f for _t, f in lg)
         if tot <= 0 or any(f < 0 or t <= 0 for t, f in lg):
