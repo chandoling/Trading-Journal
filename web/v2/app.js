@@ -3404,7 +3404,7 @@
       + (d.excl && (num(d.excl.stable) || num(d.excl.quar)) ? ' · 스테이블 환전 ' + num(d.excl.stable) + '묶음' + (num(d.excl.quar) ? ' · 격리 ' + num(d.excl.quar) + '묶음' : '') + '은 뺐어요' : '')
       + (d.cov && d.cov.next != null ? ' · 다음 날 시세 확인 ' + Math.round(num(d.cov.next) * 100) + '%' + (d.cov.pxAt ? ' · 시세 기준 ' + esc(String(d.cov.pxAt).slice(5).replace('-', '/')) : '') : '') + '</div></div>';
   }
-  const BENCH_K = ['btc', 'hold'];
+  const BENCH_K = ['btc'];
   const benchSet = () => new Set(String(LS.get('tj_v2_bench') || '').split(',').filter(k => BENCH_K.indexOf(k) >= 0));
   const benchOn = k => (k ? benchSet().has(k) : benchSet().size > 0);
   const benchAt = (B, sk) => (B.hAt && B.hAt[sk] != null ? B.hAt[sk] : num(B.at));
@@ -3486,7 +3486,7 @@
   function benchLeg() {
     const B = S.bench || {}, chip = (k, lab, ic) => '<button type="button" class="bchip ' + k + (benchOn(k) ? ' on' : '') + '" data-a="benchTog" data-v="' + k + '" aria-pressed="' + benchOn(k) + '">' + ic + esc(lab) + '</button>';
     const st = benchOn() && !B.d && (B.st === 'loading' || !B.st) ? '<span class="cap">시세 불러오는 중…</span>' : benchOn() && B.st === 'err' ? '<span class="cap">비교 시세를 불러오지 못했어요</span>' : '';
-    return '<span class="bchips">' + chip('btc', 'BTC 만 들고 있었다면', '<i class="bsw btc"></i>') + chip('hold', '안 팔았다면', '<i class="bsw hold"></i>') + st + '</span>';
+    return '<span class="bchips">' + chip('btc', 'BTC 만 들고 있었다면', '<i class="bsw btc"></i>') + st + '</span>';
   }
   function chartSVG(pts, h, best, bestChip) {
     const D = S.D;
