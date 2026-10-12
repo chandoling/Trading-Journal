@@ -95,6 +95,7 @@ DEFAULTS = {
         "partial_tg_sec": 86400,
         "vanish_sec": 3600,
         "quota_persist": 21600, "disc_persist": 86400,
+        "recon_hold_warn": 21600, "recon_hold_fresh": 7200,
     },
 }
 
@@ -175,6 +176,7 @@ def settings(cfg: dict) -> dict:
                 out["units"] = list(out["units"]) + [u9]
                 if u9 not in (out.get("optional_units") or []):
                     out["optional_units"] = list(out.get("optional_units") or []) + [u9]
+                out.setdefault("chain_units", []).append(u9)
     except Exception:
         pass
     out["bf_stall_sec"] = float(((cfg or {}).get("backfill") or {}).get("stall_sec") or 3600)
@@ -243,6 +245,7 @@ def _unreadable_rules(rel: str):
         "ext_rebuild_status.json": [r"rebuild:ext"],
         "tg_cursor.json": [r"tg:dmlag"],
         "ledger.db": [r"inbox:.+"],
+        "recon_hold.json": [r"ledger:recon_hold:.+"],
     }
     return list(table.get(rel, [])), set()
 
@@ -1748,6 +1751,25 @@ def collect_nonevm_gaps(cfg: dict) -> dict:
     return out
 
 
+def collect_recon_hold(cfg: dict) -> dict:
+    try:
+        import chain_registry as _reg9
+        chains9 = {c9 for c9 in _reg9.configured_chains(cfg or {}) if _reg9.available(c9)}
+    except Exception:
+        return {}
+    if not chains9:
+        return {}
+    d9 = _read(os.path.join(common.STATE_DIR, "recon_hold.json"), {})
+    out = {}
+    for c9, r9 in (d9.items() if isinstance(d9, dict) else ()):
+        if c9 in chains9 and isinstance(r9, dict):
+            try:
+                out[c9] = {"why": str(r9.get("why") or "")[:240], "since": float(r9.get("since")), "at": float(r9.get("at"))}
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
 def _sweep_scope():
     try:
         import copy
@@ -2066,7 +2088,7 @@ def collect_tunnel(h: dict, pm2):
         return {"ok": False, "n": n or 0, "err": f"{type(e).__name__}: {common.safe_err(e)[:100]}"}
 
 
-STABLE_USD = {"USDT", "USDC", "FDUSD", "DAI", "USD1", "USDG", "PYUSD", "TUSD", "BUSD"}
+STABLE_USD = {"USDT", "USDC", "FDUSD", "BUSD", "DAI", "TUSD", "USD", "USDG", "USDE", "USD1", "RLUSD", "PYUSD", "USDP", "USDS"}
 def collect_exbal(now: float) -> list:
     out = []
     for p in sorted(glob.glob(os.path.join(common.STATE_DIR, "exf_balances_*.json"))):
@@ -2338,6 +2360,10 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
         if pm2 is None:
             ra = runner_alive((obs.get("runner") or {}).get(u[3:] if u.startswith("tj-") else u), now)
             if ra is None:
+                if u in (h.get("chain_units") or ()):
+                    add(f"proc:{u}", u, "수집 유닛 없음", "warn", "이 체인 지갑이 등록돼 있는데 그 수집 유닛 러너 기록이 없어요(pm2 없음)",
+                        f"그 유닛을 켜세요: python3 src/unit_runner.py {u[3:]}", persist=t["proc_persist"], resolve=60, kind="proc")
+                    continue
                 if u in (h.get("optional_units") or ()):
                     continue
                 add(f"proc:{u}", u, "프로세스 상태", None, "pm2 확인 불가 · 러너 기록 없음")
@@ -2353,6 +2379,10 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
             continue
         p = pm2.get(u)
         stt = (p or {}).get("status") or "없음"
+        if p is None and u in (h.get("chain_units") or ()):
+            add(f"proc:{u}", u, "수집 유닛 없음", "warn", "이 체인 지갑이 등록돼 있는데 pm2 목록에 유닛이 없어요 — 그 체인 거래를 모으지 않는 중",
+                "pm2 start ecosystem.config.js && pm2 save", persist=t["proc_persist"], resolve=60, kind="proc")
+            continue
         if p is None and u in (h.get("optional_units") or ()):
             continue
         if p is not None and stt in ("stopped", "errored") and u in (obs.get("intent_active") or ()):
@@ -2702,9 +2732,26 @@ def evaluate(obs: dict, h: dict, open_ids=()) -> list:
             (f"수집 상태 파일(state/cursor_{c9}.json · emitted_{c9}.json)을 읽지 못해 판단 보류 — 직전 판정 유지" if n9 is None else
              (f"재시도 상한 뒤에도 상세를 못 받은 거래 {n9}건 — 그 지갑 거래 기록 누락 · 기초잔고 대사 보류(숫자 대신 보류)"
               + (f" · 마지막 사유: {why9}" if why9 else "")) if n9 else "미해소 거래 없음 — 대사 진행"),
-            f"마지막 사유(키·제공자·자릿수 미확인 토큰 등)를 고치면 그 거래가 다시 발견돼 기장될 때 자동으로 풀려요 · 목록: state/cursor_{c9}.json 의 gaps"
+            f"수집기가 6시간마다 그 거래 상세를 자동으로 다시 받아요 — 마지막 사유(키·제공자·자릿수 미확인 토큰 등)가 풀리면 기장되며 자동으로 풀려요 · 목록: state/cursor_{c9}.json 의 gaps"
             " — 풀릴 때까지 그 지갑의 창 이전 보유(기초잔고)가 안 잡힐 수 있어요",
             persist=0, resolve=600, remind=False, kind="ledger")
+    for c9, r9 in sorted((obs.get("recon_hold") or {}).items()):
+        cid9 = "ledger:recon_hold:" + c9
+        long9 = now - r9["at"] <= float(t.get("recon_hold_fresh", 7200)) and now - r9["since"] >= float(t.get("recon_hold_warn", 21600))
+        if not long9 and cid9 not in open_ids:
+            continue
+        try:
+            import chain_registry as _reg9
+            nm9 = _reg9.display_name(c9)
+        except Exception:
+            nm9 = c9
+        add(cid9, "tj-core", f"{nm9} 기초잔고 대사 보류" if long9 else f"{nm9} 기초잔고 대사",
+            "warn" if long9 else "ok",
+            (f"{fmt_ago(now - r9['since'])}째 보류 — 그 체인 창 이전 보유(기초잔고)가 아직 안 잡힘 · 사유: {r9['why'] or '알 수 없음'}"
+             f" · 마지막 확인 {fmt_ts(r9['at'])}") if long9 else "보류 풀림(또는 최근 확인 없음)",
+            "사유가 풀리면(제공자 응답·제톤 검증·자릿수 확인 등) 다음 대사(5분마다)에서 자동으로 기초잔고가 잡혀요 · 자세히: "
+            f"pm2 logs tj-core --lines 200 | grep 'recon {c9}'",
+            since=r9["since"] if long9 else None, persist=0, resolve=600, remind=False, kind="ledger")
     tn = obs.get("tunnel")
     tu = ((h.get("tunnel") or {}) if isinstance(h.get("tunnel"), dict) else {}).get("unit")
     if tn is not None and tu and tu in units:
@@ -4533,6 +4580,7 @@ class Monitor:
                 "decis": _read(os.path.join(common.STATE_DIR, "asset_decimals_issues.json"), None),
                 "poison": collect_poison(),
                 "nonevm_gaps": collect_nonevm_gaps(cfg),
+                "recon_hold": collect_recon_hold(cfg),
                 "pnlgate": _read(os.path.join(common.STATE_DIR, "rebuild_pnl_gate.json"), None),
                 "liqw": _read(os.path.join(common.STATE_DIR, "liq_watch.json"), None),
                 "hb": read_heartbeats(cfg),

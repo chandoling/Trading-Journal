@@ -125,6 +125,11 @@ def unknown_decimals(rec: dict) -> list:
 
 WHY_DEC_UNKNOWN = "token_decimals_unknown"
 WHY_SUM_MISMATCH = "token_sum_mismatch"
+_BALANCE_WHY_CODES = frozenset((
+    WHY_DEC_UNKNOWN, WHY_SUM_MISMATCH, "wallet_lt_ahead", "pending_details",
+    "jetton_list_partial", "jetton_row_bad", "jetton_unverified", "jetton_balance_missing",
+    "jetton_lt_ahead", "jetton_decimals_unknown", "jetton_wallet_missing",
+))
 
 
 def valid_decimals(x) -> bool:
@@ -241,7 +246,11 @@ def validate_balances(bal: dict, chain: str, owners: set, ownership_version: str
         why.append("per_wallet 없음")
         pw = {}
     if bal.get("_complete") is not True:
-        why.append("부분 결과(_complete 아님) — 자동 보정 보류")
+        raw = bal.get("_why")
+        codes = list(dict.fromkeys(code for code in raw[:16]
+                                  if isinstance(code, str) and len(code) <= 64 and code in _BALANCE_WHY_CODES))[:3] \
+            if isinstance(raw, (list, tuple)) else []
+        why.append("부분 결과(_complete 아님) — 자동 보정 보류" + (" [" + ", ".join(codes) + "]" if codes else ""))
     b = bal.get("_boundary")
     if not isinstance(b, dict) or b.get("kind") not in ("height", "checkpoint", "account_lt") or b.get("value") in (None, ""):
         why.append("경계(_boundary) 없음 — 같은 시점 비교 불가")

@@ -1250,6 +1250,13 @@ def iso_epoch(s):
         return None
 
 
+def log_word0(data) -> int:
+    s = str(data)
+    if s[:2] in ("0x", "0X"):
+        s = s[2:]
+    return int(s[:64], 16)
+
+
 def tool_ref(name: str, alt: str) -> str:
     return f"tools/{name}" if os.path.isfile(os.path.join(BASE_DIR, "tools", name)) else alt
 

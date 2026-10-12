@@ -545,7 +545,9 @@ def _meta_of(row, md) -> dict:
         dec = 9
     sym = (ti or {}).get("symbol") or jc.get("symbol") or ""
     sym = re.sub(r"[\x00-\x1f\x7f<>]", "", str(sym)).strip()[:24] or None
-    return {"symbol": sym, "decimals": dec, "scam": bool((ti or {}).get("is_scam"))}
+    bad = dec is None and ti is None and any(isinstance(x, dict) and x.get("valid") is False and x.get("type") in (None, "jetton_masters")
+                                             for v in (md or {}).values() if isinstance(v, dict) for x in (v.get("token_info") or []))
+    return {"symbol": sym, "decimals": dec, "scam": bool((ti or {}).get("is_scam")), "invalid": bool(bad)}
 
 
 def _floor(cfg: dict) -> int:
@@ -989,6 +991,9 @@ class TonAdapter(reg.ChainAdapter):
             else:
                 mm = meta.get(m) or {}
                 if mm.get("decimals") is None:
+                    if mm.get("invalid"):
+                        reasons.add("jetton_meta_invalid_skipped")
+                        continue
                     return None
                 asset = {"kind": "token", "id": ac.ton_raw(m), "symbol": mm.get("symbol"), "decimals": mm.get("decimals")}
             deltas.append({"owner": o, "asset": asset, "delta_base": str(v)})
@@ -1032,6 +1037,7 @@ class TonAdapter(reg.ChainAdapter):
         pend_owners = {(p.get("ref") or {}).get("owner") for p in (sd.get("pending") or {}).values() if isinstance(p, dict)}
         why = []
         per, unobs, metas, lts = {}, {}, {}, {}
+        seen_ts = [0]
         states = {akey(s.get("address")): s for s in self.client.account_states([ac.ton_raw(o) for o in sorted(owners)])
                   if isinstance(s, dict) and s.get("address")}
         for o in sorted(owners):
@@ -1056,6 +1062,8 @@ class TonAdapter(reg.ChainAdapter):
             hw = (A.get(o) or {}).get("hw")
             if not hw or int(hw[0]) != lt:
                 why.append("wallet_lt_ahead")
+            else:
+                seen_ts.append(int(hw[2] if len(hw) > 2 and hw[2] else 0))
             if o in pend_owners:
                 why.append("pending_details")
             rows, full = self.client.jetton_wallets(owner_raw=ac.ton_raw(o))
@@ -1093,11 +1101,14 @@ class TonAdapter(reg.ChainAdapter):
                 hw = (A.get(w) or {}).get("hw")
                 if not hw or str(hw[0]) != str(r.get("last_transaction_lt") or ""):
                     why.append("jetton_lt_ahead")
+                else:
+                    seen_ts.append(int(hw[2] if len(hw) > 2 and hw[2] else 0))
                 mm = META.get(m) or {}
                 if mm.get("decimals") is None:
                     if jb > 0:
                         unobs.setdefault(o, []).append(m)
-                        why.append("jetton_decimals_unknown")
+                        if not mm.get("invalid"):
+                            why.append("jetton_decimals_unknown")
                     continue
                 wb[("token", m)] = wb.get(("token", m), 0) + jb
                 metas[m] = (mm.get("symbol"), mm.get("decimals"))
@@ -1119,7 +1130,7 @@ class TonAdapter(reg.ChainAdapter):
             per[o] = wb
         return {"per_wallet": per, "_meta": metas,
                 "_boundary": {"kind": "account_lt", "value": "lt:" + ",".join(f"{o}={lts[o]}" for o in sorted(lts)), "hash": None,
-                              "ts": int(time.time())},
+                              "ts": max(seen_ts)},
                 "_complete": not why, "_why": sorted(set(why)), "_unobserved": {o: sorted(set(v)) for o, v in unobs.items()},
                 "_source": PROVIDER, "_ownership_version": self._owners_vh(owners), "_jw_fp": jw_fingerprint(owners, T)}
 

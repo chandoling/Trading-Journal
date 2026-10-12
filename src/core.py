@@ -1862,7 +1862,7 @@ class Core:
             sym = acct_norm.norm_ticker(sym)
             if sym in ("USDT", "USDC", "DAI", "USDG", "USDE", "CUSD", "USD1", "NUSD"):
                 return None
-            cex9 = self.px.candle_usd(sym, ts * 1000) if sym else None
+            cex9 = self.px.candle_usd(sym, ts * 1000) if sym and sym not in pricing.NATIVE_EX_TICKER else None
             vd9 = self._sym_px_verdict(aid, cex9, sym, ts * 1000) if cex9 else "unknown"
             if vd9 == "ok":
                 return cex9
@@ -2219,6 +2219,8 @@ class Core:
             if sym in ("USDT", "USDC", "DAI", "USDG", "USDE", "CUSD", "USD1", "NUSD"):
                 return None
             sym = acct_norm.norm_ticker(sym)
+            if sym in pricing.NATIVE_EX_TICKER:
+                return None
             return None if sym in ("USDT", "USDC", "DAI", "USDG", "USDE", "CUSD", "USD1", "NUSD") else (sym or None)
         return None
 
@@ -2892,6 +2894,8 @@ class Core:
                         out["_block_ts"] = int(b9["ts"])
                 except (TypeError, ValueError):
                     pass
+            elif b9.get("kind") == "account_lt" == sp.order_kind and isinstance(b9.get("ts"), int) and not isinstance(b9.get("ts"), bool):
+                out["_ts_cut"] = int(b9["ts"]) + 1
             return out
         return run
 
@@ -3011,6 +3015,9 @@ class Core:
             if isinstance(qd, dict):
                 out["_q"] = sorted(f"{str(w).lower()}:{str(ca).lower()}" for w in wallets for ca in (qd.get(w) or qd.get(str(w).lower()) or ()))
             return out
+        tc = bal.get("_ts_cut") if isinstance(bal, dict) else None
+        if isinstance(tc, int) and not isinstance(tc, bool):
+            return {"_ts_cut": int(tc)}
         return {}
 
     def _recon_strict_fn(self, chain: str):
@@ -3054,6 +3061,9 @@ class Core:
         return self._posted_sums(chain), set(), int(time.time())
 
     def _obs_block(self, sid: str):
+        return self._obs_bound(sid)[0]
+
+    def _obs_bound(self, sid: str):
         cache = self.__dict__.setdefault("_obs_block_cache", {})
         r = self.conn.execute("SELECT payload, observed_at FROM raw_observations WHERE obs_id=?", (sid,)).fetchone()
         key = (sid, r[1] if r else None)
@@ -3063,17 +3073,19 @@ class Core:
             except (TypeError, ValueError):
                 d = {}
             b = d.get("_block") if isinstance(d, dict) else None
-            cache[key] = int(b) if isinstance(b, int) and not isinstance(b, bool) else None
+            c = d.get("_ts_cut") if isinstance(d, dict) else None
+            cache[key] = (int(b) if isinstance(b, int) and not isinstance(b, bool) else None,
+                          int(c) if isinstance(c, int) and not isinstance(c, bool) else None)
         return cache[key]
 
     def _absorbed(self, sid: str, ts: int, T: int, blk) -> bool:
-        B = self._obs_block(sid)
+        B, cut = self._obs_bound(sid)
         if B is not None and blk is not None:
             try:
                 return int(blk) <= B
             except (TypeError, ValueError):
                 pass
-        return ts < T
+        return ts < (cut if cut is not None else T)
 
     def _tx_block(self, chain: str, txhash: str):
         r = self.conn.execute("SELECT block FROM raw_txs WHERE chain=? AND txhash=?", (chain, txhash)).fetchone() if txhash else None
@@ -3528,6 +3540,37 @@ class Core:
             self._recon_deadline = None
             self.__dict__.pop("_recon_pend_pass", None)
 
+    RECON_HOLD_FILE = "recon_hold.json"
+    RECON_HOLD_GAP = 7200
+
+    def _recon_hold_set(self, chain: str, why) -> None:
+        try:
+            p9 = os.path.join(common.STATE_DIR, self.RECON_HOLD_FILE)
+            try:
+                with open(p9, "r", encoding="utf-8") as f:
+                    cur = json.load(f)
+            except FileNotFoundError:
+                cur = {}
+            except (OSError, ValueError):
+                cur = {}
+            cur = cur if isinstance(cur, dict) else {}
+            if why is None:
+                if chain not in cur:
+                    return
+                cur.pop(chain, None)
+            else:
+                now9 = int(time.time())
+                o9 = cur.get(chain) if isinstance(cur.get(chain), dict) else {}
+                try:
+                    keep9 = now9 - int(o9.get("at") or 0) <= self.RECON_HOLD_GAP
+                    since9 = int(o9.get("since") or now9) if keep9 else now9
+                except (TypeError, ValueError):
+                    since9 = now9
+                cur[chain] = {"why": common.safe_err(why)[:240], "since": since9, "at": now9}
+            common.atomic_write_json(p9, cur)
+        except Exception as e:
+            log.warning("[%s] 대사 보류 기록 실패(무시): %s", chain, common.safe_err(e)[:160])
+
     def _recon_pass_scopes(self, drained: set, start: bool, jobs: dict):
         scopes = []
         for chain in self.cfg.get("chains", {}):
@@ -3560,6 +3603,8 @@ class Core:
             cutoff_ts = self._win_t0(None, chain)
             stream = {"evm": "evm", "sol": "sol", "bsc": "bsc"}.get(kind, chain)
             if self._meta_get(f"recon_done_{chain}"):
+                if start and kind == "nonevm":
+                    self._recon_hold_set(chain, None)
                 if not start and not any((chain, m9) in jobs for m9 in ("new", "tok", "nat", "natx")):
                     continue
                 try:
@@ -3575,6 +3620,7 @@ class Core:
                 except Exception as e:
                     self.conn.rollback()
                     log.warning("recon %s 지갑별 대사 보류·실패(다음 주기): %s", chain, common.safe_err(e)[:200])
+                    self._recon_hold_set(chain, e)
                 continue
             if (chain, "chain") not in jobs:
                 if not start or not self._scope_ready(chain) or not self._recon_quiet(chain, stream, drained):
@@ -3585,6 +3631,8 @@ class Core:
                                       else sorted(self.sol_wallets))
             except Exception as e:
                 log.warning("recon %s 잔고조회 실패(다음 주기 재시도): %s", chain, e)
+                if kind == "nonevm":
+                    self._recon_hold_set(chain, e)
                 continue
             if bal is None:
                 continue
@@ -3645,6 +3693,8 @@ class Core:
                 self.conn.execute("INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)",
                                   (f"recon_done_{chain}", str(t_obs)))
                 self.conn.commit()
+                if kind == "nonevm":
+                    self._recon_hold_set(chain, None)
                 log.info("★recon %s 완료: 기초잔고 %d개 자산 보정★", chain, len(legs))
                 dm("RECON", f"[{chain}] 기초잔고 대사 완료 — {len(legs)}개 자산 보정")
             except Exception:

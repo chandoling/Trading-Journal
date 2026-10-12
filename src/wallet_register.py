@@ -91,7 +91,7 @@ def apply_info(units=None) -> dict:
         mode = "reload" if rs and all(isinstance(h, dict) and h.get("by") == "reload" for h in rs.values()) else ("runner" if rs else "")
     except Exception:
         runner, mode = False, ""
-    return {"runner": runner, "mode": mode, "manual": MANUAL, "units": list(units or [])}
+    return {"runner": runner, "mode": mode, "manual": ("pm2 restart " + " ".join(units)) if units else MANUAL, "units": list(units or [])}
 
 
 def _record_reload(entry: dict) -> None:

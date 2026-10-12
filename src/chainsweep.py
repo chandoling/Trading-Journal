@@ -287,6 +287,7 @@ def run_once(cfg: dict, price_fn=None, post=None, now: float = None, gate: dict 
 
     if not addrs:
         return res
+    auto_off9 = auto_off_keys()
     for key, (name, cid, sym, rpcs, bmax) in chains.items():
         calls = [("eth_chainId", []), ("eth_blockNumber", [])] + [("eth_getTransactionCount", [a, "latest"]) for a in addrs] \
             + [("eth_getBalance", [a, "latest"]) for a in addrs]
@@ -345,11 +346,23 @@ def run_once(cfg: dict, price_fn=None, post=None, now: float = None, gate: dict 
             tsig = t_live and t_usd >= float(st["min_usd"])
             t_disp = t_usd if (tsig or (not t_live and t_by)) else 0.0
             base9 = [int(old9.get("nonce") or 0), str(old9.get("bal") or "0")]
+            grew9 = False
+            if key in auto_off9 and old9.get("active") and "nonce" in old9:
+                try:
+                    d9 = (bal - int(old9.get("bal") or 0)) / 1e18
+                    st_old9 = old9.get("stable") if isinstance(old9.get("stable"), dict) else {}
+                    grew9 = nonce > int(old9.get("nonce") or 0) \
+                        or (d9 * px >= float(st["min_usd"]) if px is not None else d9 >= float(st["min_units_unpriced"])) \
+                        or bool(t_live and t_usd - sum(float(v or 0) for v in st_old9.values()) >= float(st["min_usd"]))
+                except (TypeError, ValueError):
+                    grew9 = False
             if nonce or bal or tsig or k9 in g_pr:
                 per[a] = [nonce, str(bal)]
                 e9 = g_pr.setdefault(k9, {})
                 u9 = (usd or 0.0) + t_disp if (usd is not None or t_disp) else None
                 e9.update(nonce=nonce, bal=str(bal), lastChecked=int(now), usd=round(u9, 2) if u9 is not None else None)
+                if grew9:
+                    e9["activatedAt"] = int(now)
                 if tsig:
                     e9["stable"] = t_by
                 elif t_live:

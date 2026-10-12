@@ -115,6 +115,10 @@ chk(ss.runner_units(cfg1) == ss.RUNNER_UNITS + ("btc", "ton", "tron"), "R4 화�
 r5 = wr.register_chain_wallet("sui", "0x" + "ab" * 32, source="setup")
 rq = json.load(open(wr.RELOAD_PATH))["requests"][-1]
 chk(rq["units"] == ["tj-core", "tj-sui", "tj-web"] and r5["apply"]["units"] == rq["units"], "R5 적용 요청 = 그 체인 유닛 + core·web", rq)
+chk(r5["apply"]["manual"] == "pm2 restart tj-core tj-sui tj-web", "R5 수동 재시작 안내 = 그 체인 유닛 + core·web", r5["apply"])
+r5e = wr.apply_info(wr._units_for("evm", ["eth"]))
+chk(r5e["manual"] == "pm2 restart tj-core tj-evm tj-web", "R5 EVM 지갑 수동 재시작 안내 = tj-evm + core·web", r5e)
+chk(wr.apply_info()["manual"] == wr.MANUAL, "R5 영향 유닛 모름(이미 등록 — 무변경) = 종전 안내 그대로", wr.apply_info())
 wr.register_chain_wallet("btc", mode="descriptor", descriptor=f"pkh({N.BTC_XPUB}/<0;1>/*)", source="setup")
 chk(N.BTC_XPUB not in open(wr.RELOAD_PATH).read(), "R5 적용 요청 기록에 디스크립터·xpub 원문 없음")
 chk("tj-tron" in wr.RELOAD_UNITS and "tj-evm" in wr.RELOAD_UNITS, "R5 감시기 허용 목록에 새 유닛(pm2 에 있을 때만 재시작)")

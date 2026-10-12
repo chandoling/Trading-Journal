@@ -61,6 +61,47 @@ def _pct(a, b):
     return round((a / b - 1) * 100, 2) if (a is not None and b) else None
 
 
+DEX_LATER_PATH = os.path.join(common.STATE_DIR, "candles", "dex_later.json")
+DEX_LATER_MAX = 1000
+_DL_LOCK = threading.Lock()
+_DL = {"items": None}
+
+
+def dex_later_read(path=None) -> dict:
+    try:
+        with open(path or DEX_LATER_PATH, "r", encoding="utf-8") as f9:
+            d = json.load(f9)
+        it = d.get("items") if isinstance(d, dict) else None
+        return {str(k): v for k, v in it.items() if isinstance(v, dict) and v.get("d") and v.get("sym") and v.get("side") in ("sell", "buy")} \
+            if isinstance(it, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def dex_later_mark(date, sym, side, why) -> bool:
+    k = f"{date}|{sym}|{side}"
+    with _DL_LOCK:
+        if _DL["items"] is None:
+            _DL["items"] = dex_later_read()
+        it = _DL["items"]
+        if why:
+            if k in it and it[k].get("why") == why:
+                return False
+            it[k] = {"d": str(date), "sym": str(sym), "side": side, "why": str(why), "at": int(time.time())}
+            while len(it) > DEX_LATER_MAX:
+                it.pop(min(it, key=lambda k9: int(it[k9].get("at") or 0)))
+        else:
+            if k not in it:
+                return False
+            it.pop(k, None)
+        try:
+            common.atomic_write_json(DEX_LATER_PATH, {"v": 1, "items": it})
+        except Exception:
+            _DL["items"] = None
+            return False
+        return True
+
+
 def tx_addrs(snapshot) -> list:
     if snapshot is None:
         return []

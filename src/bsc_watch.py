@@ -619,7 +619,7 @@ class BscWatcher:
             if fr9 not in self.wallets and to9 not in self.wallets:
                 continue
             try:
-                val = int(lg.get("data") or "0x0", 16)
+                val = common.log_word0(lg.get("data") or "0x0")
             except ValueError:
                 continue
             if not val:

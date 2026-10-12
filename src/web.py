@@ -49,6 +49,7 @@ import xfer_match
 import sale_match
 import flow_trace
 import xchain_match
+import chain_registry
 import search_index
 import wow
 import wow2
@@ -1655,6 +1656,7 @@ CHAIN_NAME = {"eth": "Ethereum", "base": "Base", "arbitrum": "Arbitrum", "optimi
               "polygon": "Polygon", "scroll": "Scroll", "zksync": "zkSync", "gnosis": "Gnosis", "robinhood": "Robinhood",
               "arc": "Arc", "bsc": "BSC", "sol": "Solana"}
 common.fill_chain_table(CHAIN_NAME)
+CHAIN_NAME.update({k: s.name for k, s in chain_registry.SPECS.items() if k not in CHAIN_NAME})
 STABLE_GROUPS = {"USDT", "USDC", "DAI", "BUSD", "USDG", "USDE", "CUSD", "USD1", "NUSD", "USDM"}
 EX_STABLE_SYMS = frozenset(("USDT", "USDC", "FDUSD", "BUSD", "DAI", "TUSD", "USD", "USDG", "USDE", "USD1",
                             "RLUSD", "PYUSD", "USDP", "USDS"))
@@ -2398,6 +2400,8 @@ class Spot:
             src = "덱스스크리너" if kind.startswith("ds-") else "게코"
             base = kind[3:] if kind.startswith("ds-") else kind
             label = {"rate": "요청 한도(HTTP 429)", "http": f"HTTP {code}", "net": "연결 실패"}.get(base, base)
+            if base == "rate" and code == "gate":
+                label = "요청 한도 쉼(같은 IP 차트·다른 조회의 429 쉼·간격 — 안 보냄)"
             (log.debug if nf9 else log.warning)(
                 "%s DEX 가격 조회 실패: %s%s — 최근 %d분 %d회%s", src, label, f" ({why})" if why and base != "rate" else "",
                 max(1, int((now - ent[0]) / 60)) if ent else 1, n9, extra)
@@ -2784,13 +2788,13 @@ class Spot:
             for s in syms:
                 if s in ("USDT", "USDC", "DAI", "BUSD"):
                     usd[s] = 1.0
-                elif s in bn:
-                    usd[s] = bn[s]
+                elif pricing.NATIVE_EX_TICKER.get(s, s) in bn:
+                    usd[s] = bn[pricing.NATIVE_EX_TICKER.get(s, s)]
             up_syms = [s for s in syms if s in self.upbit_krw]
             if up_syms and self.rate:
                 krw = pricing.upbit_spot_krw(up_syms)
                 for s, v in krw.items():
-                    if s not in usd:
+                    if s not in usd and s not in pricing.NATIVE_EX_TICKER:
                         usd[s] = v / self.rate
                     self.ex_usd[f"upbit:{s}"] = v / self.rate
                     self.ex_ts[f"upbit:{s}"] = int(now)
@@ -10043,6 +10047,21 @@ class StateBuilder:
         aliases = prefs.get("aliases") or {}
         stake_meta = _sol_stake_accounts()
 
+        disp9 = {(cw["chain"], cw["key"]): cw["disp"] for cw in self._chain_disp_wallets(self.cfg)}
+
+        def wdisp9(ch, wa):
+            if not chain_registry.is_nonevm(ch):
+                return wa
+            d9 = disp9.get((ch, wa))
+            if d9 is not None:
+                return d9 or None
+            if ch == "btc":
+                return None
+            try:
+                return chain_registry.display_owner(ch, wa) or None
+            except (TypeError, ValueError):
+                return None
+
         def locs_for(gid, uncred=Decimal(0), ubq=Decimal(0)):
             outl = []
             for row in locs_by_gid.get(gid, []):
@@ -10079,10 +10098,11 @@ class StateBuilder:
                                  "ch": CHAIN_NAME.get(ch, ch), "sub": sub9, "qty": qn})
                     continue
                 if wa:
-                    label = aliases.get(wa) or self.addr_label.get(wa) or wa[:8]
-                    short = f"{wa[:6]}…{wa[-4:]}"
+                    wd9 = wdisp9(ch, wa)
+                    label = aliases.get(wa) or self.addr_label.get(wa) or (wd9 or wa)[:8]
+                    short = f"{wd9[:6]}…{wd9[-4:]}" if wd9 else ""
                     outl.append({"w": label if str(label).rstrip().endswith("지갑") else f"{label} 지갑", "ch": CHAIN_NAME.get(ch, ch),
-                                 "sub": f"{CHAIN_NAME.get(ch, ch)} · {short}", "qty": qn})
+                                 "sub": f"{CHAIN_NAME.get(ch, ch)} · {short}" if short else CHAIN_NAME.get(ch, ch), "qty": qn})
                     if (gid, row["location"]) in pv_dl9:
                         outl[-1].update(sub=outl[-1]["sub"] + " · 지금 잔고(옛 기록 받는 중)", pv=1)
                 else:
@@ -10118,7 +10138,7 @@ class StateBuilder:
             wa = parts[2] if len(parts) >= 3 and parts[2] else None
             if not wa:
                 return "SOL 지갑" if ch == "sol" else "EVM 지갑"
-            label = aliases.get(wa) or self.addr_label.get(wa) or wa[:8]
+            label = aliases.get(wa) or self.addr_label.get(wa) or (wdisp9(ch, wa) or wa)[:8]
             if len(parts) >= 5 and parts[3] == "stake":
                 return f"{label} · 스테이킹" if str(label).rstrip().endswith("지갑") else f"{label} 지갑 · 스테이킹"
             return label if str(label).rstrip().endswith("지갑") else f"{label} 지갑"
@@ -18009,8 +18029,17 @@ class StateBuilder:
             dh.sort(key=lambda o: -o["ts"])
             vis.extend(dv)
             hid.extend(dh)
+        full = vis
         vis = vis[offset:offset + limit]
         hid = hid[:need_h]
+        more = offset + len(vis) < n_vis
+        hi9 = full[offset - 1]["ts"] if 0 < offset <= len(full) else None
+        lo9 = vis[-1]["ts"] if (more and vis) else None
+
+        def keep9(o):
+            if offset > 0 and hi9 is None:
+                return False
+            return (hi9 is None or o["ts"] < hi9) and (lo9 is None or o["ts"] >= lo9)
         try:
             spamguard.annotate(vis)
             spamguard.annotate(hid)
@@ -18018,7 +18047,9 @@ class StateBuilder:
             log.warning("심볼 정리 실패(무시): %s", e9)
         return {"ok": True, "from": d_from, "to": d_to, "builtAt": idx["builtAt"], "n": n_vis, "counts": counts, "days": per,
                 "events": vis, "hidden": hid, "nHidden": n_hid, "hiddenKinds": hid_kinds,
-                "offset": offset, "limit": limit, "more": offset + len(vis) < n_vis}
+                "offset": offset, "limit": limit, "more": more,
+                "conv": [o for o in self._conv_rows(idx, d_from, d_to) if keep9(o)],
+                "krw": [o for o in StateBuilder._krw_rows(idx, d_from, d_to) if keep9(o)]}
 
     TAX_ROWS_MAX = 2000
 
@@ -18217,6 +18248,18 @@ class StateBuilder:
 
     CHART_CACHE_MAX = 32
 
+    @staticmethod
+    def _dex_later(out, iso, sym, side, why, listed=True):
+        if why:
+            out["dexLater"] = str(why)
+            out["autoEval"] = False
+        if not listed:
+            return
+        try:
+            sellchart.dex_later_mark(iso, sym, side, why)
+        except Exception:
+            pass
+
     def _chart_cache_put(self, cache: dict, ck, out):
         while len(cache) >= self.CHART_CACHE_MAX:
             cache.pop(next(iter(cache)))
@@ -18292,23 +18335,30 @@ class StateBuilder:
     CHART_WORKERS = 2
     CHART_WAIT_S = 8.0
     CHART_HARD_S = 75.0
+    CHART_BG_HARD_S = 300.0
     _CHART_JOBS = {}
     _CHART_JLOCK = threading.Lock()
 
-    def chart_request(self, iso, sym, iv="5m", after="1h", venue=None, wait=None, side="sell", bvenue=None):
+    def chart_request(self, iso, sym, iv="5m", after="1h", venue=None, wait=None, side="sell", bvenue=None, bg=False):
         if getattr(self, "_day_idx", None) is None:
             return None, "ok"
         buy = side == "buy"
+        bg = bool(bg) and side in ("sell", "buy")
         fn = (lambda **k9: self.receipt_chart_buy(iso, sym, iv, venue, bvenue, **k9)) if buy else \
             (lambda **k9: self.receipt_chart(iso, sym, iv, after, venue, **k9))
         if side == "fut":
             fn = lambda **k9: self.fut_chart(iso, sym, iv, venue, **k9)
-        hit = fn(cache_only=True)
-        if hit is not None:
-            return hit, "ok"
-        key = (iso, sym, iv, "-" if buy else after, venue or "") + (("buy", bvenue or "") if buy else ()) + (("fut",) if side == "fut" else ())
-        now = time.time()
+        key = (iso, sym, iv, "-" if buy else after, venue or "") + (("buy", bvenue or "") if buy else ()) + (("fut",) if side == "fut" else ()) \
+            + (("bg",) if bg else ())
         J, L = StateBuilder._CHART_JOBS, StateBuilder._CHART_JLOCK
+        with L:
+            pend9 = bg and key in J
+        if not pend9:
+            with candles.chart_mode("bg" if bg else "fg"):
+                hit = fn(cache_only=True)
+            if hit is not None:
+                return (dict(hit, calls=0) if bg and isinstance(hit, dict) else hit), "ok"
+        now = time.time()
         with L:
             for k9 in [k9 for k9, j9 in J.items() if j9["done"] and now - j9["t"] > 120]:
                 J.pop(k9, None)
@@ -18317,14 +18367,18 @@ class StateBuilder:
                 J.pop(key, None)
                 return job["res"], "ok"
             if job is None:
-                if sum(1 for j9 in J.values() if not j9["done"]) >= self.CHART_WORKERS:
+                if (any(not j9["done"] for j9 in J.values()) if bg else
+                        sum(1 for j9 in J.values() if not j9["done"] and not j9.get("bg")) >= self.CHART_WORKERS):
                     return None, "busy"
-                job = J[key] = {"ev": threading.Event(), "done": False, "res": None, "t": now}
+                job = J[key] = {"ev": threading.Event(), "done": False, "res": None, "t": now, "bg": bg}
 
                 def work(job=job):
                     try:
-                        with candles.hard_deadline(time.time() + self.CHART_HARD_S):
+                        with candles.hard_deadline(time.time() + (self.CHART_BG_HARD_S if bg else self.CHART_HARD_S)), \
+                                candles.chart_mode("bg" if bg else "fg"), candles.count_calls() as nc9:
                             job["res"] = fn()
+                        if bg and isinstance(job["res"], dict):
+                            job["res"] = dict(job["res"], calls=nc9[0])
                     except Exception as e9:
                         log.warning("%s 차트 수집 실패(%s %s): %s", "매수" if buy else "매도", iso, sym, e9)
                         job["res"] = {"ok": False, "error": "차트를 만들지 못했어요"}
@@ -18351,7 +18405,7 @@ class StateBuilder:
         ck = (base.get("builtAt"), iso, want, iv, after, venue or "", bool(fetch))
         cache = self.__dict__.setdefault("_chart_cache", {})
         hit = cache.get(ck)
-        if hit and time.time() - hit[0] < self.CHART_TTL_S:
+        if hit and time.time() - hit[0] < self.CHART_TTL_S and not (hit[1].get("dexLater") and candles.chart_mode_now() == "bg"):
             return self._with_eval(hit[1])
         if cache_only:
             return None
@@ -18424,6 +18478,7 @@ class StateBuilder:
                             "volUnit": ("usd" if (res["src"] or {}).get("venue") == "dex" else "coin") if res["ok"] else None,
                             "why": None if res["ok"] else "봉을 받지 못했어요 — " + " · ".join(
                                 f"{t['label']}: {t.get('note') or t.get('why')}" for t in res["tried"][:4])}
+            self._dex_later(out, iso, want, "sell", res.get("dexLater"), listed=(iv == "5m" and after == "1h" and not venue))
         iv_eff = candles.IV_SEC.get(((out.get("chart") or {}).get("src") or {}).get("iv") or iv, iv_s)
         out["summary"] = sellchart.summarize(cs9 or [], fills, iv_eff, req_end=w1 + iv_s, deposit_ts=dep9, cur=cur)
         if cs9:
@@ -18699,6 +18754,26 @@ class StateBuilder:
             o["evalStatus"] = "running"
         return o
 
+    @staticmethod
+    def _receipt_vk(idx, iso, canon):
+        import review_daily as rd
+        out = {}
+        for _ts, kind, e, meta in ((idx.get("ix") or {}).get(iso) or ()):
+            if kind != "pos" or meta is None or not isinstance(e, dict):
+                continue
+            k9 = str(e.get("k") or "")
+            if "매도" not in k9 and "매수" not in k9:
+                continue
+            v9 = rd._venue(e)
+            if v9 in ("LP", "?", ""):
+                continue
+            t9 = ("gate" if v9 == "게이트" else "cex") if v9 in rd._EX_KO else "dex"
+            s9 = canon.get(meta[1], meta[1])
+            lst9 = out.setdefault(s9, [])
+            if t9 not in lst9:
+                lst9.append(t9)
+        return {k9: sorted(v9) for k9, v9 in out.items()}
+
     def receipt_list(self, d_from, d_to):
         idx = getattr(self, "_day_idx", None)
         if not idx or idx.get("pos") is None:
@@ -18724,9 +18799,10 @@ class StateBuilder:
             for s9, v9 in m9.items():
                 c9 = canon.get(s9, s9)
                 agg[c9] = agg.get(c9, 0.0) + v9
+            vk9 = self._receipt_vk(idx, d9, canon)
             for s9, v9 in agg.items():
                 if abs(v9) >= 0.005:
-                    items.append({"date": d9, "sym": s9, "usd": round(v9, 2)})
+                    items.append({"date": d9, "sym": s9, "usd": round(v9, 2), "vk": vk9.get(s9) or []})
         items.sort(key=lambda x: (x["date"], abs(x["usd"])), reverse=True)
         return {"ok": True, "from": d_from, "to": d_to, "builtAt": idx.get("builtAt"), "n": len(items), "items": items}
 
@@ -18816,7 +18892,7 @@ class StateBuilder:
         ck = ("buy", base.get("builtAt"), iso, want, iv, venue or "", bvenue or "", bool(fetch))
         cache = self.__dict__.setdefault("_chart_cache", {})
         hit = cache.get(ck)
-        if hit and time.time() - hit[0] < self.CHART_TTL_S:
+        if hit and time.time() - hit[0] < self.CHART_TTL_S and not (hit[1].get("dexLater") and candles.chart_mode_now() == "bg"):
             return self._with_eval(hit[1])
         if cache_only:
             return None
@@ -18963,6 +19039,7 @@ class StateBuilder:
         out["outside"] = {"n": len(outside), "amt": sellchart._r(sum(float(fills[i]["amt"] or 0) for i in outside))} if outside else None
         iv_s = candles.IV_SEC[iv]
         cs_all, srcs, bridge = [], [], None
+        later9 = sell.get("dexLater")
         fetched9 = []
         seg_out = []
         gseg9, gap_job = [], None
@@ -18992,6 +19069,7 @@ class StateBuilder:
                 res = candles.best_chart(plan, iv, s9["from"], s9["to"] + iv_s, cur, fx_rows_fn=lambda iv9, a9, b9: candles.fx_rows(iv9, a9, b9),
                                          budget_s=self.CHART_BUDGET_S / max(1, len(segs)),
                                          ref_px=candles.median_px([f9 for f9 in fills if s9["from"] <= f9["ts"] <= s9["to"]] or fills))
+                later9 = later9 or res.get("dexLater")
                 src9 = res["src"]
                 unit9 = "usd" if (src9 or {}).get("venue") == "dex" else "coin"
                 fx9 = ((src9 or {}).get("fx") or {}).get("avg") or rk9 or 1.0
@@ -19028,6 +19106,7 @@ class StateBuilder:
                 rb = candles.best_chart([(primary, "hour", "bridge")], iv, segs[-1]["to"], fs9 + 3600, cur,
                                         fx_rows_fn=lambda iv9, a9, b9: candles.fx_rows(iv9, a9, b9), budget_s=20, by_date=False)
                 bridge = rb["candles"] if rb["ok"] else None
+                later9 = later9 or rb.get("dexLater")
                 sp9 = self._fetched_span(rb, segs[-1]["to"], fs9 + 3600, 3600)
                 if sp9:
                     fetched9.append(sp9)
@@ -19040,6 +19119,7 @@ class StateBuilder:
                            "s_name": self._venue_name(sv9), "cur": cur, "iv": iv, "rk": rk9, "val": val9}
             out["chart"] = {"ok": any(x["ok"] for x in seg_out), "src": srcs[0] if srcs else None,
                             "why": None if any(x["ok"] for x in seg_out) else (seg_out[0]["why"] if seg_out else "봉을 받지 못했어요")}
+            self._dex_later(out, iso, want, "buy", later9, listed=(iv == "5m" and not venue and not bvenue))
         else:
             seg_out = [dict(s9, ok=False, src=None, tried=[], candles=[], volUnit=None, why=None) for s9 in segs]
         out["segs"] = seg_out
@@ -20740,7 +20820,7 @@ class Handler(BaseHTTPRequestHandler):
             return None, {"ok": False, "error": "date는 유효한 YYYY-MM-DD 날짜여야 합니다"}
         if iv not in self._IV_OK or after not in self._AFTER_OK or (venue is not None and len(venue) > 200):
             return None, {"ok": False, "error": "iv = 1m|5m · after = 1h|6h|24h · venue ≤ 200자"}
-        return {"date": d9, "sym": sym, "iv": iv, "after": after, "venue": venue, "side": side, "bvenue": bvenue}, None
+        return {"date": d9, "sym": sym, "iv": iv, "after": after, "venue": venue, "side": side, "bvenue": bvenue, "bg": g("bg") == "1"}, None
 
     def _send_receipt_chart(self, query):
         if not onboarding.origin_ok(self, required=False):
@@ -20750,7 +20830,8 @@ class Handler(BaseHTTPRequestHandler):
         if err:
             return self._send(400, err)
         BUILDER.snapshot()
-        body, st9 = BUILDER.chart_request(a9["date"], a9["sym"], a9["iv"], a9["after"], a9["venue"], side=a9["side"], bvenue=a9["bvenue"])
+        body, st9 = BUILDER.chart_request(a9["date"], a9["sym"], a9["iv"], a9["after"], a9["venue"], side=a9["side"], bvenue=a9["bvenue"],
+                                          bg=bool(a9.get("bg")) and a9["side"] in ("sell", "buy"))
         if st9 != "ok":
             return self._send(202, {"ok": True, "status": st9, "retryAfter": 3,
                                     "message": "차트를 준비하는 중이에요" if st9 == "preparing" else "다른 차트를 받는 중이에요 — 잠시 뒤 다시"})

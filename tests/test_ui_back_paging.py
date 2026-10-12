@@ -20,8 +20,8 @@ for k in ("attdRc", "attdLp", "attdFr", "attdCoin"):
     ln = app[j9:app.find("\n", j9)] if j9 >= 0 else ""
     T.chk("uiSheetCloseThen(" in ln and "uiSheetClose(true)" not in ln, "분해 시트 %s = 시트 기록 칸을 걷은 뒤 이동(uiSheetCloseThen)" % k, ln[:160])
 T.chk("function uiSheetCloseThen(then) {" in app, "uiSheetCloseThen 정의(뒤로가기가 끝난 뒤 then — closeDrawerThen 과 같은 규약)")
-T.chk("const units = uiPgUnits(rows, r => !!r.sub)" in app and "uiPgSlice('hold', units)" in app and "uiPgBar('hold', units.length, { unit: '종' })" in app,
-      "보유표 쪽 = 코인 묶음 단위(본행 + Rabby 하위 행)")
+T.chk("uiPgUnits" not in app and "uiPgSlice('hold', rows)" in app and "uiPgBar('hold', rows.length, { unit: rows.length > nCoin ? '줄' : '종' })" in app,
+      "보유표 쪽 = 줄 단위(Rabby 하위 행도 한 줄 · 쪽 바 = 줄 수 — 하위 행 있으면 단위 '줄')")
 T.chk("uiPgSlice('zero', z)" in app and "uiPgBar('zero', z.length, {" in app and "uiPgReveal('zero'," in app,
       "값 없는 토큰 = 설정 쪽 크기씩 쪽 · 찾아가기 = 그 쪽(uiPgReveal)")
 
@@ -54,7 +54,7 @@ const ow = line('    ofWaitGo: () => {').trim().replace(/,(\s*\/\/.*)?$/, '');
 const names = Object.keys(deps);
 let A = {}, revealN = 0, frN = 0;
 const F = new Function(...names, 'A', 'revealAndHighlight', 'openFutRcpt', 'toast', 'uiPgReset0', B + '\nconst ACT = {' + acts + ', ' + ow + '};\n'
-  + 'return { uiSheetOpen, uiSheetClose, drawerHist, uiPgSlice, uiPgBar, uiPgReveal, uiPgReset, uiPgUnits: typeof uiPgUnits === "function" ? uiPgUnits : null, zeroFoldHTML, ACT };')(
+  + 'return { uiSheetOpen, uiSheetClose, drawerHist, uiPgSlice, uiPgBar, uiPgReveal, uiPgReset, zeroFoldHTML, ACT };')(
   ...names.map(k => deps[k]), A, () => { revealN++; return Promise.resolve(true); }, () => { frN++; S.drawer = 'frcpt'; F0().drawerHist(); }, () => {}, null);
 function F0() { return F; }
 // 서랍 popstate(app.js 10937 과 같은 규칙 — 표식 없는 칸으로 돌아오면 서랍 닫기)
@@ -86,19 +86,18 @@ const tick = () => new Promise(r => setTimeout(r, 20));
   F.uiSheetOpen('attd', 'd|10-10|mk', '시세', null);
   F.ACT.attdCoin({ dataset: { v: 'ETH' } }); await tick();
   chk(revealN === 1 && !S.sheet && H.i === base && !(history.state && history.state.tjDr), "분해 시트 → 보유 코인 = 시트 기록 칸 걷힘(빈 칸 0 — '뒤로'가 바로 앞 화면으로)", { revealN, extra: H.i - base });
-  // 보유표 — Rabby 하위 행이 쪽 경계에
+  // 보유표 — Rabby 하위 행이 쪽 경계에 · rev1012(오너 10-12 '스테이킹된 것도 10개 안에 포함'): 줄 단위 — 하위 행은 다음 쪽 맨 위(한 쪽 = 정확히 쪽 크기).
+  //   종전 ui17 기대(본행 쪽에 붙어 첫 쪽 21줄)는 쪽마다 줄 수가 달라 쪽 바 위치가 바뀌어 오너 지시로 바꿈
   const HR = Array.from({ length: 30 }, (_, i) => ({ g: { key: 'C' + i } })); HR.splice(20, 0, { g: { key: '#rb:C19' }, sub: true });   // 20번째 본행(C19) 바로 뒤
-  const U = F.uiPgUnits ? F.uiPgUnits(HR, r => !!r.sub) : null;
   S.uiPg = { hold: 0 };
-  const flat = s => s.rows.reduce((a, u) => a.concat(u), []);
-  const p0 = U ? flat(F.uiPgSlice('hold', U)) : [];
-  S.uiPg.hold = 1; const p1 = U ? flat(F.uiPgSlice('hold', U)) : [];
-  chk(U && U.length === 30 && p0.length === 21 && p0[19].g.key === 'C19' && p0[20].g.key === '#rb:C19' && p1[0].g.key === 'C20' && !p1.some(r => r.sub),
-    'Rabby 하위 행 = 본행(C19 · 20번째)과 같은 첫 쪽(본행 20 + 하위 1) · 둘째 쪽은 C20 부터', U && { n: U.length, p0: p0.slice(-2).map(r => r.g.key), p1: p1.slice(0, 1).map(r => r.g.key) });
-  S.uiPg = {}; const hp = k => r => !!r && !!r.g && r.g.key === k, F9 = hp('#rb:C19');
-  F.uiPgReveal('hold', u => Array.isArray(u) && u.some(F9));
-  const pr = U ? flat(F.uiPgSlice('hold', U)) : [];
-  chk(U && S.uiPg.hold === 0 && pr.some(r => r.g.key === '#rb:C19'), '찾아가기(Rabby 하위 행 키) = 그 묶음 쪽(첫 쪽)', S.uiPg);
+  const p0 = F.uiPgSlice('hold', HR).rows;
+  S.uiPg.hold = 1; const p1 = F.uiPgSlice('hold', HR).rows;
+  chk(p0.length === 20 && p0[19].g.key === 'C19' && p1.length === 11 && p1[0].g.key === '#rb:C19' && p1[1].g.key === 'C20',
+    'Rabby 하위 행(20번째 본행 C19 뒤) = 줄 단위 — 첫 쪽 정확히 20줄 · 하위 행은 둘째 쪽 맨 위', { p0: p0.slice(-1).map(r => r.g.key), p1: p1.slice(0, 2).map(r => r.g.key) });
+  S.uiPg = {}; const hp = k => r => !!r && !!r.g && r.g.key === k;
+  F.uiPgReveal('hold', hp('#rb:C19'));
+  const pr = F.uiPgSlice('hold', HR).rows;
+  chk(S.uiPg.hold === 1 && pr[0].g.key === '#rb:C19', '찾아가기(Rabby 하위 행 키) = 그 줄 쪽(둘째 쪽 맨 위)', S.uiPg);
   // 값 없는 토큰 45개
   S.D = { zeroInst: Array.from({ length: 45 }, (_, i) => ({ sym: 'Z' + i, key: 'k' + i, chain: 'Base', where: [], qty: i + 1, cost: 0 })) };
   S.uiPg = {}; S.hold = { mode: 'all', showZero: true };
@@ -123,9 +122,8 @@ const tick = () => new Promise(r => setTimeout(r, 20));
   S.uiPg = {}; F.uiPgReveal('zero', x => !!x && String(x.sym).toUpperCase() === 'Z42'); h = F.zeroFoldHTML();
   chk(S.uiPg.zero === 4 && /data-anc="zcoin:Z42"/.test(h), '쪽 크기 10: 찾아가기(Z42) = 다섯째 쪽', S.uiPg);
   const HR2 = Array.from({ length: 30 }, (_, i) => ({ g: { key: 'C' + i } })); HR2.splice(10, 0, { g: { key: '#rb:C9' }, sub: true });
-  const U2 = F.uiPgUnits ? F.uiPgUnits(HR2, r => !!r.sub) : null;
-  S.uiPg = { hold: 0 }; const r0 = U2 ? flat(F.uiPgSlice('hold', U2)) : []; S.uiPg.hold = 1; const r1 = U2 ? flat(F.uiPgSlice('hold', U2)) : [];
-  chk(U2 && r0.length === 11 && r0[9].g.key === 'C9' && r0[10].g.key === '#rb:C9' && r1[0].g.key === 'C10', '쪽 크기 10: Rabby 하위 행 = 10번째 본행(C9)과 같은 첫 쪽 · 둘째 쪽 C10 부터', r0.slice(-2).map(r => r.g.key));
+  S.uiPg = { hold: 0 }; const r0 = F.uiPgSlice('hold', HR2).rows; S.uiPg.hold = 1; const r1 = F.uiPgSlice('hold', HR2).rows;
+  chk(r0.length === 10 && r0[9].g.key === 'C9' && r1.length === 10 && r1[0].g.key === '#rb:C9' && r1[1].g.key === 'C10', '쪽 크기 10: Rabby 하위 행(10번째 본행 C9 뒤) = 첫 쪽 정확히 10줄 · 하위 행은 둘째 쪽 맨 위(rev1012)', r0.slice(-1).concat(r1.slice(0, 2)).map(r => r.g.key));
   S.pgSz = 20;
   for (const [ok, msg, d] of R) console.log((ok ? 'PASS ' : 'FAIL ') + msg + (ok || d === undefined ? '' : '  — ' + JSON.stringify(d).slice(0, 600)));
   console.log('RESULT ' + R.filter(x => x[0]).length + '/' + R.length);

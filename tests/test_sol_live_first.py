@@ -634,4 +634,22 @@ allM = {s for rows in cM.sigs.values() for s, _sl, _bt in rows}
 chk(allM <= set(got) and all(y in cur(wt) for y in YMs) and not {h for h, n in got.items() if n > 1}
     and sum(1 for s in allM if cM.n_tx(s) > 1) == 0, "[M] 나머지 완주 · 중복·다시 읽기 0", {"빠짐": len(allM - set(got))})
 
+print("— W 백필 위젯 마지막 조각(rev1012 E9 · 외부 검수 2)")
+bf_engine._PROGRESS.clear()
+clock.t = T0
+cW = Chain()
+OW = b58("W-owner")
+cW.atas[OW] = []
+for i in range(376):
+    cW.sol_in(OW, b58(f"W-old-{i}"), T0 - 100 * 86400 + i * 20000)
+cfgW, rpcW = setup("W", [OW], chain=cW)
+wt = watcher(cfgW, [OW])
+ib, errs = Inbox(), []
+phW = []
+run(wt, 4 * 3600, ib, errs, each=lambda: phW.append((wt.progress.items.get("sol") or {}).get("phase")))
+itW = wt.progress.items.get("sol") or {}
+chk(len(ib.scan()) == 376 and OW in wt.cursor and "parse" in phW, "[W] 백필 완주(376건 · 커서) · 도중엔 진행 중(parse) 표시", {"방출": len(ib.scan()), "오류": errs[:1]})
+chk(itW.get("phase") == "live", "[W] 마지막 조각이 50건 이하여도 진행 항목이 '끝(live)'으로 닫힘(멈춤 표시로 남지 않음)",
+    {k: itW.get(k) for k in ("phase", "done", "total")})
+
 H.finish()

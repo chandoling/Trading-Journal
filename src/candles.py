@@ -27,7 +27,7 @@ GATE_MAX_POINTS = 9990
 USD_LIKE = {"USDT", "USDC", "USD", "FDUSD", "USD1", "BUSD", "TUSD", "DAI", "USDE", "PYUSD", "USDG"}
 
 HOST_POLICY = {
-    "api.geckoterminal.com": {"rate": 0.2, "burst": 1, "conc": 1},
+    "api.geckoterminal.com": {"rate": 0.2, "burst": 1, "conc": 1, "share": "gt_free", "share_rate": 0.15, "share_burst": 1, "share_xproc": True},
     "api.dexscreener.com": {"rate": 2.0, "burst": 3, "conc": 1},
     "api.upbit.com": {"rate": 4.0, "burst": 4, "conc": 2},
     "api.bithumb.com": {"rate": 4.0, "burst": 4, "conc": 2},
@@ -142,6 +142,113 @@ def budget_left():
     return None if b is None else _bud_left(b)
 
 
+FG_DEFER_WAIT_S = 10.0
+BG_PACE_S = 60.0
+BG_KEY_FRAC = 0.5
+DEFER_WHYS = ("deferred", "bg_pace", "bg_stop")
+LATER_WHYS = DEFER_WHYS + ("net", "time", "budget")
+DEFER_NOTE = "오늘 몫 소진 — DEX 봉은 나중에 채움"
+BG_PACE_NOTE = "미리 받기 간격(분당 1회) — 다음 차례에"
+BG_STOP_NOTE = "오늘 미리 받기 멈춤(호출 제한 429) — 내일 다시"
+_BG = {"last": {}, "stop": {}}
+_BG_LOCK = threading.Lock()
+BG_SLEEP = [time.sleep]
+
+
+@contextlib.contextmanager
+def chart_mode(mode):
+    prev = getattr(_TL, "mode", None)
+    _TL.mode = mode
+    try:
+        yield
+    finally:
+        _TL.mode = prev
+
+
+def chart_mode_now():
+    return getattr(_TL, "mode", None)
+
+
+@contextlib.contextmanager
+def count_calls():
+    prev = getattr(_TL, "ncalls", None)
+    cell = [0]
+    _TL.ncalls = cell
+    try:
+        yield cell
+    finally:
+        _TL.ncalls = prev
+        if prev is not None:
+            prev[0] += cell[0]
+
+
+def _kst_day(t=None) -> str:
+    return datetime.fromtimestamp(time.time() if t is None else t, KST).strftime("%Y-%m-%d")
+
+
+def bg_stopped(host="api.geckoterminal.com") -> bool:
+    with _BG_LOCK:
+        return _BG["stop"].get(host) == _kst_day()
+
+
+def _bg_mark_429(host, e) -> bool:
+    if chart_mode_now() != "bg" or getattr(e, "kind", "") not in ("http429", "quota"):
+        return False
+    with _BG_LOCK:
+        _BG["stop"][host] = _kst_day()
+    return True
+
+
+def _keyless_room(host, deadline=None):
+    mode = chart_mode_now()
+    if mode == "fg":
+        try:
+            w = bf_engine.gate_wait(host)
+        except Exception:
+            w = 0.0
+        return ("deferred", DEFER_NOTE) if w > FG_DEFER_WAIT_S else None
+    if mode != "bg":
+        return None
+    while True:
+        with _BG_LOCK:
+            now = time.time()
+            if _BG["stop"].get(host) == _kst_day(now):
+                return "bg_stop", BG_STOP_NOTE
+            w = float(_BG["last"].get(host) or 0.0) + BG_PACE_S - now
+            if w <= 0:
+                _BG["last"][host] = now
+                return None
+        lims = [x for x in (getattr(_TL, "dl", None), deadline) if x is not None]
+        if lims and now + w > min(lims) - 15:
+            return "bg_pace", BG_PACE_NOTE
+        BG_SLEEP[0](min(w, 5.0))
+
+
+def _bg_key_ok() -> bool:
+    try:
+        import cgkey
+        import nft
+        k = cgkey.key()
+        if not k:
+            return False
+        plan, rec = cgkey.plan_of(k)
+        if plan != "pro":
+            return False
+        b = cgkey.budget()
+        _r, share = cgkey._record(k)
+        if cgplan_basis(rec, b, share) != "pro":
+            return False
+        _pm, pd = nft.cg_key_windows(rec, b, share)
+        return int(b.cg_usage().get("total") or 0) + 1 <= int(pd) * BG_KEY_FRAC
+    except Exception:
+        return False
+
+
+def cgplan_basis(rec, b, share) -> str:
+    import cgplan
+    return str(cgplan.budget(rec, b.now(), share, b.month_count("coingecko_key")).get("basis") or "")
+
+
 def _get(url, headers=None, timeout=20.0, deadline=None, inline_wait=10.0, gate_host=None, single=False):
     host = (urllib.parse.urlsplit(url).hostname or "?").lower()
     dl = getattr(_TL, "dl", None)
@@ -166,6 +273,9 @@ def _get(url, headers=None, timeout=20.0, deadline=None, inline_wait=10.0, gate_
                 _bud_take(bud)
             CALLS["n"] += 1
             CALLS["by_host"][host] = CALLS["by_host"].get(host, 0) + 1
+            nc9 = getattr(_TL, "ncalls", None)
+            if nc9 is not None:
+                nc9[0] += 1
         if bud is None:
             return bf_engine.http_json(url, headers=headers, timeout=timeout, retries=tries, retry_5xx=True,
                                        deadline=deadline, max_inline_wait=inline_wait, breaker_5xx=True, sem_timeout=sem_to, **gk9)
@@ -191,6 +301,8 @@ def _keyed(url, lane, allow, valid, deadline):
         return "skip", "import"
     if not cgkey.key():
         return "skip", "nokey"
+    if chart_mode_now() == "bg" and not _bg_key_ok():
+        return "skip", "bg"
     if url.startswith("https://api.coingecko.com/api/v3"):
         path = url[len("https://api.coingecko.com/api/v3"):]
     elif url.startswith(cgkey.GT_ROOT):
@@ -694,6 +806,8 @@ def fetch_gt(chain, pool, token, iv, t0, t1, now=None, res="minute", keyed=True)
             return Result(candles=c["candles"] or None, why=None if c["candles"] else (c.get("why") or "no_data"),
                           note=c.get("note"), cached=True)
     rows, calls, deadline = [], 0, time.time() + DEADLINE_S + 30
+    if chart_mode_now() == "bg" and getattr(_TL, "dl", None) is not None:
+        deadline = max(deadline, _TL.dl)
     b = min(t1, int(now))
     complete = False
     oldest_seen = None
@@ -713,8 +827,17 @@ def fetch_gt(chain, pool, token, iv, t0, t1, now=None, res="minute", keyed=True)
                 elif kind9 == "err":
                     raise kv9
                 else:
-                    d = _get(url, headers={"Accept": "application/json;version=20230302"}, deadline=deadline, inline_wait=30.0)
+                    rm9 = _keyless_room("api.geckoterminal.com", deadline)
+                    if rm9:
+                        return Result(why=rm9[0], note=rm9[1], calls=calls - 1 + (1 if kind9 == "fail" else 0), complete=False)
+                    bg9 = chart_mode_now() == "bg"
+                    if bg9:
+                        deadline = max(deadline, time.time() + 30)
+                    d = _get(url, headers={"Accept": "application/json;version=20230302"}, deadline=deadline, inline_wait=30.0,
+                             **({"single": True} if bg9 else {}))
             except bf_engine.NetError as e:
+                if _bg_mark_429("api.geckoterminal.com", e):
+                    return Result(why="bg_stop", note=BG_STOP_NOTE, calls=calls)
                 if getattr(e, "kind", "") == "budget":
                     return Result(why="time", note="GeckoTerminal 조회 시간 초과(요청 마감)", calls=calls)
                 if getattr(e, "code", None) == 401 and "180 days" in str(e):
@@ -920,6 +1043,25 @@ def _ref_ok(cands, ref_px):
 
 
 def best_chart(chain_plan, iv, t0, t1, display_cur, now=None, max_tries=8, fx_rows_fn=None, budget_s=None, by_date=True, ref_px=None):
+    kw = dict(now=now, max_tries=max_tries, fx_rows_fn=fx_rows_fn, by_date=by_date, ref_px=ref_px)
+    mode = chart_mode_now()
+    t_start = time.time()
+    r = _best_chart(chain_plan, iv, t0, t1, display_cur, budget_s=budget_s, defer_stop=(mode == "fg"), **kw)
+    if mode != "fg" or r["ok"] or not any(t9.get("why") == "deferred" for t9 in r["tried"]) \
+            or all(tag == "bridge" for _sp, _res, tag in chain_plan):
+        return r
+    left9 = None if budget_s is None else max(0.0, budget_s - (time.time() - t_start))
+    _TL.mode = None
+    try:
+        r2 = _best_chart(chain_plan, iv, t0, t1, display_cur, budget_s=left9, defer_stop=False, **kw)
+    finally:
+        _TL.mode = mode
+    r2["calls"] = r2.get("calls", 0) + r.get("calls", 0)
+    return r2
+
+
+def _best_chart(chain_plan, iv, t0, t1, display_cur, now=None, max_tries=8, fx_rows_fn=None, budget_s=None, by_date=True, ref_px=None,
+                defer_stop=False):
     tried, calls = [], 0
     holder9 = next((sp.get("venue") for sp, res, tag in chain_plan if tag == "primary"), None)
     t_start = time.time()
@@ -930,11 +1072,16 @@ def best_chart(chain_plan, iv, t0, t1, display_cur, now=None, max_tries=8, fx_ro
         if cid9:
             plan.append(({"venue": "coingecko", "id": cid9}, "hour", "lowres"))
     n_try = 0
+    later = None
     for i, (sp, res, tag) in enumerate(plan):
         if n_try >= max_tries:
             break
+        if defer_stop and tag == "lowres" and any(t9.get("why") == "deferred" for t9 in tried):
+            break
         if budget_s is not None and time.time() - t_start > budget_s:
             tried.append({"label": spec_label(sp), "iv": "1h" if res == "hour" else iv, "why": "time", "note": "시간 초과로 시도 안 함"})
+            if sp.get("venue") in ("dex", "coingecko") and later is None:
+                later = "time"
             break
         r, sp2 = fetch_spec(sp, iv, t0, t1, now=now, res=res)
         calls += r.calls
@@ -943,6 +1090,8 @@ def best_chart(chain_plan, iv, t0, t1, display_cur, now=None, max_tries=8, fx_ro
         use_iv = "1h" if res == "hour" else iv
         if not r.ok:
             tried.append({"label": spec_label(sp2), "iv": use_iv, "why": r.why, "note": r.note})
+            if later is None and r.why in LATER_WHYS and sp2.get("venue") in ("dex", "coingecko"):
+                later = r.why
             if r.why == "budget":
                 break
             continue
@@ -978,8 +1127,9 @@ def best_chart(chain_plan, iv, t0, t1, display_cur, now=None, max_tries=8, fx_ro
                "tag": tag, "fallback": i > 0, "cur": display_cur, "fx": fx, "cached": r.cached}
         if sp2.get("venue") == "dex":
             src.update(chain=sp2.get("chain"), pool=sp2.get("pool"), dex=sp2.get("dex"), poolMatched=bool(sp2.get("poolMatched")))
-        return {"ok": True, "candles": cands, "src": src, "tried": tried, "calls": calls, "complete": bool(r.complete), "spec": sp2, "res": res}
-    return {"ok": False, "candles": None, "src": None, "tried": tried, "calls": calls}
+        return {"ok": True, "candles": cands, "src": src, "tried": tried, "calls": calls, "complete": bool(r.complete), "spec": sp2, "res": res,
+                "dexLater": None if (sp2.get("venue") == "dex" and res != "hour") else later}
+    return {"ok": False, "candles": None, "src": None, "tried": tried, "calls": calls, "dexLater": later}
 
 
 def fx_rows(iv, t0, t1, now=None):
@@ -1038,10 +1188,17 @@ def fetch_cg(chain, token, t0, t1, now=None, keyed=True):
         elif kind9 == "err":
             raise kv9
         else:
-            d = _get(url, deadline=dl9, inline_wait=60.0)
+            if chart_mode_now() == "bg":
+                rm9 = _keyless_room("api.coingecko.com", dl9)
+                if rm9:
+                    return Result(why=rm9[0], note=rm9[1], calls=1 if kind9 == "fail" else 0)
+                dl9 = max(dl9, time.time() + 30)
+            d = _get(url, deadline=dl9, inline_wait=60.0, **({"single": True} if chart_mode_now() == "bg" else {}))
     except BudgetExceeded as e:
         return Result(why="budget", note=common.safe_err(e))
     except bf_engine.NetError as e:
+        if _bg_mark_429("api.coingecko.com", e):
+            return Result(why="bg_stop", note=BG_STOP_NOTE, calls=1)
         if getattr(e, "kind", "") == "budget":
             return Result(why="time", note="코인게코 조회 시간 초과(요청 마감)", calls=1)
         if getattr(e, "kind", "") == "http4xx" and getattr(e, "code", None) == 404:
@@ -1210,10 +1367,17 @@ def fetch_cg_id(cid, t0, t1, now=None, keyed=True):
         elif kind9 == "err":
             raise kv9
         else:
-            d = _get(url, deadline=dl9, inline_wait=60.0)
+            if chart_mode_now() == "bg":
+                rm9 = _keyless_room("api.coingecko.com", dl9)
+                if rm9:
+                    return Result(why=rm9[0], note=rm9[1], calls=1 if kind9 == "fail" else 0)
+                dl9 = max(dl9, time.time() + 30)
+            d = _get(url, deadline=dl9, inline_wait=60.0, **({"single": True} if chart_mode_now() == "bg" else {}))
     except BudgetExceeded as e:
         return Result(why="budget", note=common.safe_err(e))
     except bf_engine.NetError as e:
+        if _bg_mark_429("api.coingecko.com", e):
+            return Result(why="bg_stop", note=BG_STOP_NOTE, calls=1)
         if getattr(e, "kind", "") == "budget":
             return Result(why="time", note="코인게코 조회 시간 초과(요청 마감)", calls=1)
         if getattr(e, "kind", "") == "http4xx" and getattr(e, "code", None) == 404:
@@ -1230,6 +1394,7 @@ def fetch_cg_id(cid, t0, t1, now=None, keyed=True):
 
 
 _CG_SIMPLE = {}
+CG_SIMPLE_MAX_AGE_S = 3600
 
 
 def _cg_error_body(d) -> bool:
@@ -1255,7 +1420,7 @@ def cg_simple_usd(ids, now=None, ttl=600, fail=None, keyed=False, key_only=False
             elif kind9 == "err":
                 d = None
             elif key_only:
-                return {i: _CG_SIMPLE[i][1] for i in ids if i in _CG_SIMPLE and _CG_SIMPLE[i][1]}
+                return _cg_simple_have(ids, now, ttl)
             else:
                 d = _get(u9, deadline=time.time() + 30, inline_wait=10.0)
         except (BudgetExceeded, bf_engine.NetError):
@@ -1270,7 +1435,12 @@ def cg_simple_usd(ids, now=None, ttl=600, fail=None, keyed=False, key_only=False
                 _CG_SIMPLE[i] = (now, v)
             elif isinstance(d, dict):
                 _CG_SIMPLE[i] = (now, None)
-    return {i: _CG_SIMPLE[i][1] for i in ids if i in _CG_SIMPLE and _CG_SIMPLE[i][1]}
+    return _cg_simple_have(ids, now, ttl)
+
+
+def _cg_simple_have(ids, now, ttl):
+    lim = max(float(ttl or 0), CG_SIMPLE_MAX_AGE_S)
+    return {i: _CG_SIMPLE[i][1] for i in ids if i in _CG_SIMPLE and _CG_SIMPLE[i][1] and now - _CG_SIMPLE[i][0] <= lim}
 
 
 def fetch_cg_id_hourly(cid, t0, t1, now=None):

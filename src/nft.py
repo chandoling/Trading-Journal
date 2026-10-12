@@ -126,6 +126,8 @@ THIN_FULL_DAYS = 90
 THIN_MAX_DAYS = 365
 AB_MIG_V = 1
 ERR_RETRY = 1800
+OS_ERR_GIVEUP = 3
+CG_TRACK_EVERY = 4 * 3600
 BAK_SUFFIX = ".bak_ab1006"
 AB_BLOCK_UNTIL = 253402300799.0
 
@@ -407,6 +409,11 @@ def atomic_write(path: str, obj) -> None:
         except OSError:
             pass
         raise
+
+
+def _cg_only(c) -> bool:
+    ch = (c or {}).get("chain") if isinstance(c, dict) else None
+    return ch in CG_PLATFORM and ch not in OS_CHAIN
 
 
 def _load_cache(path, empty):
@@ -2289,6 +2296,17 @@ class Tracker:
             else:
                 rt[key] = now
 
+    def _os_err_giveup(self, key) -> bool:
+        with self.lock:
+            if key in (self.fp.get("fp") or {}):
+                return False
+            oe = self.fp.get("oserr")
+            if not isinstance(oe, dict):
+                oe = self.fp["oserr"] = {}
+            n = int(_num(oe.get(key)) or 0) + 1
+            oe[key] = n
+            return n >= OS_ERR_GIVEUP
+
     def fetch_fp(self, key, col):
         if ser_parse(key) or ab_parent_key(key) or col_ab_parent(col):
             return self._fetch_series(key, col)
@@ -2338,7 +2356,11 @@ class Tracker:
                     if rec is None and (_num(fp9.get("native_currency")) or 0) > 0:
                         out = "err"
                 if out == "none" and os_out not in (None, "none", "ok"):
-                    rec, out = None, os_out
+                    if not (os_out == "err" and self._os_err_giveup(key)):
+                        rec, out = None, os_out
+                elif os_first and os_out in ("none", "ok"):
+                    with self.lock:
+                        (self.fp.get("oserr") if isinstance(self.fp.get("oserr"), dict) else {}).pop(key, None)
             if os_last and not (out == "ok" and rec):
                 rec, out = os_last, "ok"
         if self._hid_seen():
@@ -2651,7 +2673,7 @@ class Tracker:
                 if self._os_path(key, c, rec):
                     every = OS_TRACK_EVERY if tracked else OS_CAND_EVERY
                 else:
-                    every = FP_EVERY if tracked else CAND_FP_EVERY
+                    every = (CG_TRACK_EVERY if _cg_only(c) else FP_EVERY) if tracked else CAND_FP_EVERY
                 if unconf:
                     every = min(every, ERR_RETRY)
                 last = float(chk.get(key) or 0)
@@ -3194,7 +3216,8 @@ class Tracker:
                                               "sales7", "sales30", "basis")}
             fp_out["usd"] = rec["native"] * px if px else _num(rec.get("usd"))
             fp_out["src_ko"] = SRC_KO.get(rec.get("src"), rec.get("src"))
-            fp_out["stale"] = bool(rec.get("err")) or now - float(rec.get("at") or 0) > STALE_SEC
+            fp_out["stale"] = bool(rec.get("err")) or now - float(rec.get("at") or 0) > (
+                max(STALE_SEC, CG_TRACK_EVERY + FP_EVERY) if _cg_only(c) else STALE_SEC)
         prev = None
         for r in reversed(hrows or []):
             if r and r[0] < td and _num(r[2]):

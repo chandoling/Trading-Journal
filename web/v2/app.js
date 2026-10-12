@@ -182,7 +182,6 @@
     const s = uiPgSlice(key, items);
     return (o.more || s.last > 0 ? anc : '') + s.rows.map((x, i) => row(x, s.from + i)).join('') + uiPgBar(key, items.length, Object.assign({}, o, { fold: !!o.more }));
   }
-  const uiPgUnits = (rows, sub) => rows.reduce((a, r) => { if (a.length && sub(r)) a[a.length - 1].push(r); else a.push([r]); return a; }, []);
   const uiPgReveal = (key, f) => { (S.uiPgFind || (S.uiPgFind = {}))[key] = f; };
   const uiPgReset = (pre) => { const P = uiPgS(); Object.keys(P).forEach(k => { if (k === pre || k.indexOf(pre) === 0) P[k] = 0; }); };
   function uiPgGo(el, v) {
@@ -756,7 +755,7 @@
     t = t.replace(/\(POST [^)]*\)/g, '').replace(/\(\/api\/[^)]*\)/g, '').replace(/\/api\/[\w_/]+/g, '').replace(/config\.json[^.·]*[.·]?\s*/g, '')
       .replace(/\s*·?\s*검토 후 \/confirm 처리 예정/g, '').replace(/★/g, '').replace(/\s{2,}/g, ' ');
     if (money && !plain && !(S.rand && !(money === 2 && /^[+\-−]?\$[\d,]+(?:\.\d+)?$/.test(t.trim())))) {
-      t = t.replace(/([+\-−]?)\$([\d,]+(?:\.\d+)?)(?![\d])/g, (a, sg, v) => { const n = parseFloat(v.replace(/,/g, '')); return (n >= 1 || money === 2) ? m((sg === '-' || sg === '−' ? -1 : 1) * n, { sign: !!sg }) : a; })
+      t = t.replace(/([+\-−]?)\$([\d,]+(?:\.\d+)?(?:[eE][+\-]?\d+)?)(?![\d])/g, (a, sg, v) => { const n = parseFloat(v.replace(/,/g, '')); return (n >= 1 || money === 2) ? m((sg === '-' || sg === '−' ? -1 : 1) * n, { sign: !!sg }) : a; })
         .replace(/([+\-]?)([\d,]+(?:\.\d+)?)\$/g, (a, sg, v) => m((sg === '-' ? -1 : 1) * parseFloat(v.replace(/,/g, '')), { sign: !!sg }));
     }
     t = t.replace(/(\d{1,3}(?:,\d{3})+|\d+)\.(\d+)/g, (a, i, d) => { const iv = +i.replace(/,/g, ''); if (iv >= 1000) { const r = Math.round(parseFloat(iv + '.' + d)); return i.indexOf(',') >= 0 ? nf('ko-KR', 0, 0).format(r) : String(r); } const td = d.replace(/0+$/, ''); return td ? i + '.' + td : i; });
@@ -3487,7 +3486,8 @@
     if (hi - lo < 1e-9) { hi += 1; lo -= 1; }
     const kr = (S.cur === 'USD' ? 1 : rate()) * KS(1);
     const niceStep = raw => { const e = Math.pow(10, Math.floor(Math.log10(raw))); for (const f of [1, 2, 2.5, 5, 10]) if (f * e >= raw) return f * e; return 10 * e; };
-    const step = niceStep((hi - lo) * kr / 3);
+    const axA = Math.max(Math.abs(lo), Math.abs(hi)) * kr, axRes = S.cur === 'USD' ? (axA >= 1e6 ? 1e4 : axA >= 1e4 ? 100 : axA >= 100 ? 1 : 0.01) : (axA >= 1e8 ? 1e6 : axA >= 1e4 ? 1e4 : 1);
+    const step = Math.max(niceStep((hi - lo) * kr / 3), axRes);
     const t0 = Math.floor(lo * kr / step + 1e-9) * step, t1 = Math.ceil(hi * kr / step - 1e-9) * step;
     const ticks = []; for (let v = t1; v >= t0 - step * 1e-6 && ticks.length < 8; v -= step) ticks.push(v / kr);
     lo = t0 / kr; hi = t1 / kr;
@@ -3766,14 +3766,13 @@
   function holdingsHTML() {
     const D = S.D;
     const { rows, hidden } = holdRows();
-    const units = uiPgUnits(rows, r => !!r.sub), F0 = S.uiPgFind && S.uiPgFind.hold;
-    if (F0) S.uiPgFind.hold = u => Array.isArray(u) && u.some(F0);
-    const pgH = uiPgSlice('hold', units), shown = pgH.rows.reduce((a, u) => a.concat(u), []);
+    const nCoin = rows.filter(r => !r.sub).length;
+    const pgH = uiPgSlice('hold', rows), shown = pgH.rows;
     const seg = '<div class="seg" role="group" aria-label="보관 구분">' + [['all', '전체'], ['wallet', '지갑'], ['cex', '거래소']].map(x => '<button data-a="holdMode" data-v="' + x[0] + '" class="' + (S.hold.mode === x[0] ? 'on' : '') + '" aria-pressed="' + (S.hold.mode === x[0]) + '">' + x[1] + '</button>').join('') + '</div>';
     const dustLink = S.dust > 0 && (hidden.length || S.hold.showDust) ? '<button class="link" data-a="toggleDust" style="font-weight:600;color:var(--muted)">' + (S.hold.showDust ? '소액 숨기기' : '소액 ' + hidden.length + '종 숨김 · 보기') + '</button>' : '';
     const dense = S.hold.dense && !S.mobile;
     const dseg = S.mobile ? '' : '<div class="seg dseg" role="group" aria-label="행 밀도">' + [['0', '기본'], ['1', '촘촘히']].map(x => '<button data-a="holdDense" data-v="' + x[0] + '" class="' + ((dense ? '1' : '0') === x[0] ? 'on' : '') + '" aria-pressed="' + ((dense ? '1' : '0') === x[0]) + '">' + (x[0] === '1' ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>' : '') + x[1] + '</button>').join('') + '</div>';
-    const head = '<div class="tblhead"><h2 class="h2">보유 코인</h2><span class="cap num">' + units.length + '종 · ' + ({ value: '평가금액', roi: '수익률', pnl: '평가손익' })[S.hold.sort] + ' 순</span>' + dustLink + '<div class="sp"></div>' + seg + dseg + '</div>';
+    const head = '<div class="tblhead"><h2 class="h2">보유 코인</h2><span class="cap num">' + nCoin + '종 · ' + ({ value: '평가금액', roi: '수익률', pnl: '평가손익' })[S.hold.sort] + ' 순</span>' + dustLink + '<div class="sp"></div>' + seg + dseg + '</div>';
     if (!rows.length) {
       return '<div class="card">' + head + '<div class="empty"><div class="eic">' + IC.coin + '</div><b>' + (D.groups.length ? '표시할 코인이 없어요' : '보유 코인이 없어요') + '</b>'
         + (hidden.length ? '소액 기준($' + S.dust + ') 미만 ' + hidden.length + '종이 숨겨져 있어요. <button class="link" data-a="toggleDust">모두 보기</button>' : '지갑 스캔·거래소 동기화 후 여기에 나타나요.') + '</div>' + zeroFoldHTML() + debtFootHTML() + '</div>';
@@ -3808,7 +3807,7 @@
         }).join('') + '</tbody></table>';
     }
     const zf = zeroFoldHTML();
-    const foot = pgH.last > 0 ? '<div class="foot hpg">' + uiPgBar('hold', units.length, { unit: '종' }) + '</div>' : '';
+    const foot = pgH.last > 0 ? '<div class="foot hpg">' + uiPgBar('hold', rows.length, { unit: rows.length > nCoin ? '줄' : '종' }) + '</div>' : '';
     return '<div class="card">' + (pgH.last > 0 ? '<div class="upga" data-pga="hold"></div>' : '') + head + body + foot + zf + debtFootHTML() + '</div>';
   }
   function debtFootHTML() {
@@ -4019,6 +4018,7 @@
       + uiPgBar('venue', vis.length, { unit: '곳' }) + '</div>';
   }
   const vnCash = sym => { const s = String(sym || '').toUpperCase(); return s === 'KRW' || !!(S.D && S.D.stableSyms && S.D.stableSyms.has(s)); };
+  const VN_FAM = { Solana: 'SOL', Tron: 'TRON', Sui: 'SUI', TON: 'TON', Bitcoin: 'BTC' }, VN_FAMS = ['EVM', 'SOL', 'TRON', 'SUI', 'TON', 'BTC'];
   function vnModel(v) {
     const D = S.D, tot = num(v.total);
     const cm = new Map();
@@ -4038,9 +4038,8 @@
         if (ch9 && !chAddr[ch9]) chAddr[ch9] = w.addr; });
     }
     const allCash = v.kind !== 'lp' && v.items.length > 0 && v.items.every(it => vnCash(it.sym));
-    const sol = v.kind === 'wallet' && chains.length > 0 && chains.every(c => c.ch === 'Solana');
-    const evm = v.kind === 'wallet' && chains.some(c => c.ch !== 'Solana');
-    const kindTxt = v.kind === 'wallet' ? '지갑 · ' + (sol ? 'SOL' : evm && chains.some(c => c.ch === 'Solana') ? 'EVM · SOL' : 'EVM') : v.kind === 'lp' ? 'LP' : allCash ? '현금' : '거래소';
+    const fam9 = new Set(chains.map(c => VN_FAM[c.ch] || 'EVM'));
+    const kindTxt = v.kind === 'wallet' ? '지갑 · ' + (VN_FAMS.filter(f => fam9.has(f)).join(' · ') || 'EVM') : v.kind === 'lp' ? 'LP' : allCash ? '현금' : '거래소';
     const share = num(D.total) > 0 ? tot / num(D.total) * 100 : 0;
     return { v, tot, coins, chains, addrs, chAddr, kindTxt, share };
   }
@@ -8048,6 +8047,8 @@
   const rcBK = R => { const v = rcV(R); return R.key + '|' + v.iv + '|' + v.venue + '|' + (v.bvenue || ''); };
   const rcSK = (R, side) => rcEK(R) + (side === 'buy' ? '|buy' : '');
   const rcDefView = R => { const v = rcV(R); return v.iv === '5m' && v.after === '1h' && !v.venue && !v.bvenue; };
+  const rcFbTxt = t => t && t.why === 'deferred' ? ' 봉 대신 ' : ' 봉 없음 → ';
+  const rcLaterTxt = w => w === 'deferred' ? '오늘 몫 소진 — DEX 봉은 나중에 채움' : 'DEX 봉을 지금 못 받아 나중에 채움';
   function rcAuto(R, side) {
     if (!R || !rcOn(R) || !rcDefView(R)) return;
     const c = side === 'buy' ? (S.rcptB || {})[rcBK(R)] : (S.rcptX || {})[rcK(R)];
@@ -8412,8 +8413,9 @@
     const leg = '<div class="rkleg cap"><span><i class="lg sdr" aria-hidden="true"></i>내 매도</span>' + (avg > 0 ? '<span><i class="lg avlr" aria-hidden="true"></i>평균 매도 <b class="num">' + P(avg) + '</b></span>' : '')
       + (uc > 0 ? '<span><i class="lg ucl" aria-hidden="true"></i>평단 <b class="num">' + P(uc) + '</b></span>' : '') + '<span><i class="lg aft" aria-hidden="true"></i>판 뒤 ' + (RC_AFK[x.after] || '') + '</span>' + (sp ? '<span><i class="lg spl" aria-hidden="true"></i>거래량 급증</span>' : '') + '</div>';
     const tr = arr(ch.tried), ivTxt = RC_IVK[src.iv] || src.iv || '';
-    let srcTxt = (src.fallback && tr.length ? tr[0].label + ' 봉 없음 → ' : '') + (src.label || '') + ' ' + ivTxt;
+    let srcTxt = (src.fallback && tr.length ? tr[0].label + rcFbTxt(tr[0]) : '') + (src.label || '') + ' ' + ivTxt;
     if (src.fx) srcTxt += src.fx.mode === 'KRW→USD' ? '(달러 환산)' : '(원화 환산)';
+    if (x.dexLater) srcTxt += ' · ' + rcLaterTxt(x.dexLater);
     if (src.iv && src.iv !== x.iv) srcTxt += ' · ' + (RC_IVK[x.iv] || x.iv) + '이 없어 저해상도';
     if (src.venue === 'dex' && src.poolMatched === false) srcTxt += ' · 내 거래 풀과 다른 풀일 수 있어요';
     if (bn.k > 1) srcTxt += ' · ' + bn.k + '봉씩 묶어 그림';
@@ -8653,12 +8655,13 @@
       + Array.from(new Set(brP.map(p0 => String(p0.gb.label || p0.gb.short || '')))).map(t => '<span class="rkbrl"><i class="lg brg" aria-hidden="true"></i>' + esc(t) + ' <span class="mut">(흐린 봉 · 점수 밖)</span></span>').join('') + '</div>';
     const ivTxt = s0 => RC_IVK[(s0 || {}).iv] || (s0 || {}).iv || '';
     const bSrc = arr(b.segs).find(sg => sg.ok && sg.src) || {}, bs0 = bSrc.src || {}, btr = arr(bSrc.tried);
-    let bTxt = '매수 봉 ' + (bs0.fallback && btr.length ? btr[0].label + ' 봉 없음 → ' : '') + (bs0.label || '') + ' ' + ivTxt(bs0) + (bs0.fx ? (bs0.fx.mode === 'KRW→USD' ? '(달러 환산)' : '(원화 환산)') : '');
+    let bTxt = '매수 봉 ' + (bs0.fallback && btr.length ? btr[0].label + rcFbTxt(btr[0]) : '') + (bs0.label || '') + ' ' + ivTxt(bs0) + (bs0.fx ? (bs0.fx.mode === 'KRW→USD' ? '(달러 환산)' : '(원화 환산)') : '');
     if (bs0.venue === 'dex' && bs0.poolMatched === false) bTxt += ' · 내 거래 풀과 다른 풀일 수 있어요';
     if (arr(b.segs).some(sg => num(sg.filled) > 0)) bTxt += ' · 거래 없는 칸은 직전 가격(흐린 봉)';
     const tr = arr(ch.tried);
-    let sTxt = '매도 봉 ' + (src.fallback && tr.length ? tr[0].label + ' 봉 없음 → ' : '') + (src.label || '') + ' ' + ivTxt(src) + (src.fx ? (src.fx.mode === 'KRW→USD' ? '(달러 환산)' : '(원화 환산)') : '');
+    let sTxt = '매도 봉 ' + (src.fallback && tr.length ? tr[0].label + rcFbTxt(tr[0]) : '') + (src.label || '') + ' ' + ivTxt(src) + (src.fx ? (src.fx.mode === 'KRW→USD' ? '(달러 환산)' : '(원화 환산)') : '');
     if (src.iv && src.iv !== x.iv) sTxt += ' · ' + (RC_IVK[x.iv] || x.iv) + '이 없어 저해상도';
+    if (b.dexLater || x.dexLater) sTxt += ' · ' + rcLaterTxt(b.dexLater || x.dexLater);
     if (fk !== 1) sTxt += ' · ' + (dc === 'USD' ? '달러' : '원화') + ' 환산(그날 매도 환율 ₩' + nf('ko-KR', 0, 0).format(Rk) + ')';
     const brTxt = Array.from(new Set(brP.map(p0 => (p0.gb.short || '빈 시간') + ' 봉 ' + ((p0.gb.src || {}).label || '') + ' ' + ivTxt(p0.gb.src)))).join(' · ');
     const outTxt = b.outside && num(b.outside.n) > 0 ? '그림 밖 매수 ' + num(b.outside.n) + '회(금액 큰 묶음 3개만 그림)' : '';

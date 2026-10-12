@@ -9,6 +9,7 @@ import common
 MAX_TRIES = 12
 BACKOFF_MIN, BACKOFF_MAX = 30, 6 * 3600
 EMITTED_KEEP = 200000
+GAP_RETRY_SEC = 6 * 3600
 
 
 class ChainState:
@@ -94,12 +95,36 @@ class ChainState:
         p["why"] = str(why)[:160]
         if p["tries"] >= MAX_TRIES:
             self.d["pending"].pop(sid, None)
+            o9 = (p.get("ref") or {}).get("owner")
+            self.d["gaps"] = [g for g in self.d["gaps"] if not (isinstance(g, dict) and str(g.get("id")) == str(sid)
+                                                                 and (g.get("ref") or {}).get("owner") == o9)]
             self.d["gaps"].append({"id": sid, "ref": p.get("ref"), "why": p["why"], "tries": p["tries"], "at": int(now)})
             self.save()
             return "gap"
         p["next"] = int(now + min(BACKOFF_MAX, BACKOFF_MIN * (2 ** (p["tries"] - 1))))
         self.save()
         return "retry"
+
+    def requeue_gaps(self, owners, now: float = None) -> int:
+        now = time.time() if now is None else now
+        at = {}
+        for g in self.d["gaps"]:
+            if isinstance(g, dict):
+                k = (str(g.get("id")), (g.get("ref") or {}).get("owner"))
+                try:
+                    at[k] = max(at.get(k, 0), int(g.get("at") or 0))
+                except (TypeError, ValueError):
+                    at[k] = max(at.get(k, 0), 0)
+        n = 0
+        for sid, ref, _eo in self.unresolved_gaps():
+            if ref.get("lane") == "reorg" or ref.get("owner") not in owners or sid in self.d["pending"] \
+                    or now - at.get((sid, ref.get("owner")), 0) < GAP_RETRY_SEC:
+                continue
+            self.d["pending"][sid] = {"ref": ref, "first": int(now), "tries": MAX_TRIES - 1, "next": 0, "why": "gap 재시도"}
+            n += 1
+        if n:
+            self.save()
+        return n
 
     def mark_emitted(self, sid: str, tx_uid: str, owners=None, covered=()) -> None:
         self.d["pending"].pop(str(sid), None)

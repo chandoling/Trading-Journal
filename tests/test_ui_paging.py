@@ -132,7 +132,7 @@ T.chk("const uiPageSize = () => { if (S.pgSz !== 10 && S.pgSz !== 20) { let v = 
 T.chk(app.count("const size = uiPageSize(), P = uiPgS()") == 2 and "function uiPgSlice(key, items) {" in app and "function uiPgBar(key, total, o) {" in app
       and "function uiPaged(key, items, row, o) {" in app and "uiPgN" not in app,
       "pg19: uiPgSlice·uiPgBar = 설정 쪽 크기 그대로(앞 n개·목록별 크기 인자 없음 · uiPaged 는 uiPgSlice 를 씀 — slice·bar·찾아가기 같은 값)")
-for frag, what in (("const pgH = uiPgSlice('hold', units), shown = ", "보유 코인(앞 12·15줄 + 나머지 N종 · 합계 | 모두 보기 없음)"),
+for frag, what in (("const pgH = uiPgSlice('hold', rows), shown = ", "보유 코인(앞 12·15줄 + 나머지 N종 · 합계 | 모두 보기 없음 · rev1012 줄 단위)"),
                    ("(pz.last > 0 ?", "값 없는 토큰 앵커"), ("(pg9.last > 0 ?", "숨긴 이벤트 앵커"),
                    ("(pgT.last > 0 ?", "NFT 추적 중 앵커"), ("(pgJ.last > 0 ?", "사이클 목록 앵커"),
                    ("(pgV.last > 0 ?", "보관처별 앵커(외 N곳 · 합 | 모두 보기 없음)"), ("(pgC.last > 0 ?", "보관처 서랍 › 들어 있는 코인 앵커"),
@@ -179,7 +179,7 @@ const deps = {
 };
 const LSV = {};
 const names = Object.keys(deps);
-const F = new Function(...names, B + '\nreturn { uiPaged, uiPgSlice, uiPgBar, uiPgReveal, uiPgReset, uiPgGo, uiPgS, sFold, uiPageSize, uiPgSz, uiPgUnits };')(...names.map(k => deps[k]));
+const F = new Function(...names, B + '\nreturn { uiPaged, uiPgSlice, uiPgBar, uiPgReveal, uiPgReset, uiPgGo, uiPgS, sFold, uiPageSize, uiPgSz };')(...names.map(k => deps[k]));
 const L = Array.from({ length: 45 }, (_, i) => 'r' + i);
 const row = (x, i) => '<i data-i="' + i + '">' + x + '</i>';
 const idx = h => [...h.matchAll(/data-i="(\d+)"/g)].map(x => +x[1]);
@@ -319,11 +319,11 @@ chk(idx(h).join() === '20,21,22,23,24,25,26,27,28,29' && /21–30/.test(h), 'sFo
   chk(idx(h).length === 10 && /1–10/.test(h) && /uiPgClose/.test(h), '카드 펼침 = 10개씩 + 접기', txt(h));
   reset(); S.pgSz = 20; S.uiPg.t = 1; h = F.uiPaged('t', L.slice(0, 30), (x, i) => '<tr><td>' + i + '</td></tr>', { tr: 6, unit: '일' });
   chk(/21–30/.test(h) && /<tr class="umtr">/.test(h), 'pg19: 20 이면 종전 10개씩이던 목록(30일 목록 등)도 20개씩(목록별 크기 없음)', txt(h));
-  // Rabby 하위 행 — 10개씩에서도 본행과 같은 쪽
+  // Rabby 하위 행 — rev1012(오너 10-12 '스테이킹된 것도 10개 안에 포함'): 하위 행도 한 줄 → 경계 하위 행은 다음 쪽 맨 위(한 쪽 = 정확히 10줄).
+  //   종전 ui17 기대(본행 쪽에 붙어 첫 쪽 11줄)는 쪽마다 줄 수가 달라 쪽 바 위치가 바뀌어 오너 지시로 바꿈 — 보유표 실제 그림은 test_ui_hold_pg_rows
   reset(); S.pgSz = 10; const HR = Array.from({ length: 25 }, (_, i) => ({ k: 'C' + i })); HR.splice(10, 0, { k: '#rb:C9', sub: true });
-  const U = F.uiPgUnits(HR, r => !!r.sub), fl = s => s.rows.reduce((a, u) => a.concat(u), []);
-  S.uiPg.hold = 0; const q0 = fl(F.uiPgSlice('hold', U)); S.uiPg.hold = 1; const q1 = fl(F.uiPgSlice('hold', U));
-  chk(q0.length === 11 && q0[9].k === 'C9' && q0[10].k === '#rb:C9' && q1[0].k === 'C10', 'Rabby 하위 행(10번째 본행 바로 뒤) = 첫 쪽(본행 10 + 하위 1) · 둘째 쪽 C10 부터', q0.slice(-2).map(r => r.k));
+  S.uiPg.hold = 0; const q0 = F.uiPgSlice('hold', HR).rows; S.uiPg.hold = 1; const q1 = F.uiPgSlice('hold', HR).rows;
+  chk(q0.length === 10 && q0[9].k === 'C9' && q1.length === 10 && q1[0].k === '#rb:C9' && q1[1].k === 'C10', 'Rabby 하위 행(10번째 본행 바로 뒤) = 줄 단위 — 첫 쪽 정확히 10줄 · 하위 행은 둘째 쪽 맨 위', q0.slice(-2).map(r => r.k).concat(q1.slice(0, 2).map(r => r.k)));
   // 바 a–b 와 slice 가 같은 값(바·자르기 어긋남 없음)
   reset(); S.pgSz = 10; S.uiPg.k = 1; const s9 = F.uiPgSlice('k', L), b9 = F.uiPgBar('k', L.length, {});
   chk(s9.from === 10 && s9.rows.length === 10 && s9.last === 4 && /11–20/.test(b9), 'uiPgSlice·uiPgBar 같은 크기(11–20)', { from: s9.from, n: s9.rows.length });

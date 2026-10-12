@@ -28,7 +28,7 @@ FILES_STATE = ("daily_px.json", "other_assets.json", "settings.json", "nft_prefs
                "first_seen_px.json",
                "genuine_tokens.json")
 FILES_STATE_RX = re.compile(r"^reviews_llm[\w-]*\.json$")
-CONFIG_KEYS = ("wallets", "exchange_addresses")
+CONFIG_KEYS = ("wallets", "exchange_addresses", "chain_wallets")
 
 _lock = threading.Lock()
 _thread = None

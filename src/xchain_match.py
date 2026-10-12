@@ -216,7 +216,7 @@ def evm_owner_deltas(cr, owner):
         f = "0x" + lg["t"][1][26:]
         to = "0x" + lg["t"][2][26:]
         try:
-            v = int(lg["d"], 16)
+            v = _cm9.log_word0(lg["d"])
         except ValueError:
             continue
         if f == owner:
@@ -1056,7 +1056,7 @@ class Tracer:
         tp = [TR, None, topic] if kind == "to" else [TR, topic, None]
         lg = self._evm(chain, "eth_getLogs", [{"address": token, "fromBlock": hex(lo), "toBlock": hex(hi), "topics": tp}], logs=True) or []
         for x in reversed(lg):
-            row = {"block": int(x["blockNumber"], 16), "tx": norm(x["transactionHash"]), "qty": str(D(int(x["data"], 16)) / (Decimal(10) ** dec))}
+            row = {"block": int(x["blockNumber"], 16), "tx": norm(x["transactionHash"]), "qty": str(D(_cm9.log_word0(x["data"])) / (Decimal(10) ** dec))}
             if kind == "to":
                 row["from"] = "0x" + x["topics"][1][26:]
             else:
@@ -1157,7 +1157,7 @@ class Tracer:
                 try:
                     rows.append({"ti": int(x.get("transactionIndex") or "0x0", 16), "li": int(x.get("logIndex") or "0x0", 16),
                                  "tx": norm(x.get("transactionHash")), "to": "0x" + x["topics"][2][26:],
-                                 "qty": str(D(int(x.get("data") or "0x0", 16)) / (Decimal(10) ** dec))})
+                                 "qty": str(D(_cm9.log_word0(x.get("data") or "0x0")) / (Decimal(10) ** dec))})
                 except (KeyError, IndexError, TypeError, ValueError):
                     continue
             rows.sort(key=lambda r: (r["ti"], r["li"]))

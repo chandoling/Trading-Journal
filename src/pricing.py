@@ -102,6 +102,7 @@ STABLE_MINTS = {
 }
 
 MAJOR_CANDLE_SYMS = {"ETH", "BTC", "SOL", "POL", "BNB", "AVAX"}
+NATIVE_EX_TICKER = {"TON": "GRAM"}
 
 
 UPBIT_CANDLE_GAP = 0.15
@@ -496,10 +497,9 @@ class PxCache:
         m = (ts_ms // 60_000) * 60_000
         with self.lock:
             v = self.d["candle"].get(f"{sym_u}:{m}")
-            neg = self.d["neg_ts"].get(sym_u, 0)
         if v:
             return v
-        if time.time() - neg < self.NEG_TTL or sym_u in ("USDT", "USDC", "DAI"):
+        if sym_u in ("USDT", "USDC", "DAI"):
             return self.candle_usd(sym, ts_ms)
         with self.lock:
             for i in range(1, max(0, int(back_min)) + 1):
@@ -552,11 +552,22 @@ class PxCache:
             return None
         px = None
         ven9 = None
+        alt9 = NATIVE_EX_TICKER.get(sym)
         for _name, fn in CANDLE_ORDER:
             try:
-                px = fn(sym, m, cache=self) if fn is _c_coingecko else fn(sym, m)
+                if fn is _c_coingecko:
+                    px = fn(sym, m, cache=self)
+                elif alt9 and _name == "upbit_krw":
+                    px = fn(alt9, m)
+                else:
+                    px = fn(sym, m)
             except Exception:
                 px = None
+            if not px and alt9 and _name in ("binance", "bybit"):
+                try:
+                    px = fn(alt9, m)
+                except Exception:
+                    px = None
             if px:
                 ven9 = _name
                 break
@@ -966,7 +977,7 @@ class PxFetchQueue:
 
     def drain(self) -> int:
         with self.lock:
-            items = sorted(self.q, key=lambda x: (x[0], str(x[1] or ""), int(x[2])))
+            items = sorted(self.q, key=lambda x: (x[0], str(x[1] or ""), -int(x[2])))
             self.q.clear()
         t0 = time.time()
         for kind, sym, m in items:
@@ -1423,6 +1434,43 @@ def _gt_ok(d):
     return "family"
 
 
+GT_FREE_HOST = "api.geckoterminal.com"
+GT_FREE_WAIT_S = 12.0
+GT_FREE_PAUSE_S = 60.0
+
+
+class GtGateWait(urllib.error.HTTPError):
+    pass
+
+
+def _gt_free(url, timeout=15.0):
+    g = None
+    try:
+        import bf_engine
+        import candles
+        g = bf_engine.gate(GT_FREE_HOST)
+    except ImportError:
+        g = None
+    if g is not None:
+        try:
+            g.acquire("bg", deadline=time.time() + GT_FREE_WAIT_S)
+        except bf_engine.NetError as e:
+            ra9 = max(GT_FREE_PAUSE_S, bf_engine.gate_wait(GT_FREE_HOST))
+            raise GtGateWait(url.split("?", 1)[0], 429, "게이트 대기 — " + common.safe_err(e)[:80],
+                             {"Retry-After": str(int(min(300.0, ra9)))}, None)
+    try:
+        return _gj(url, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        if e.code == 429 and g is not None:
+            try:
+                ra = float((e.headers or {}).get("Retry-After") or 0)
+            except (TypeError, ValueError, AttributeError):
+                ra = 0.0
+            with g.lock:
+                g.pause_until = max(g.pause_until, time.time() + min(300.0, max(GT_FREE_PAUSE_S, ra)))
+        raise
+
+
 def gt_token_prices_ex(chain: str, cas: list, keyed: bool = True):
     global _GT_ERR
     net = GT_NETWORK.get(chain)
@@ -1443,14 +1491,14 @@ def gt_token_prices_ex(chain: str, cas: list, keyed: bool = True):
             elif kind9 == "err":
                 raise urllib.error.HTTPError(url.split("?", 1)[0], 404, "Not Found", None, None)
             else:
-                d = _gj(url, timeout=15)
+                d = _gt_free(url, timeout=15)
         except urllib.error.HTTPError as e:
             ra = None
             try:
                 ra = (e.headers or {}).get("Retry-After")
             except Exception:
                 pass
-            _GT_ERR = ("rate" if e.code == 429 else "http", e.code, str(ra or ""))
+            _GT_ERR = ("rate" if e.code == 429 else "http", "gate" if isinstance(e, GtGateWait) else e.code, str(ra or ""))
             if e.code == 429:
                 break
             continue
@@ -1471,7 +1519,7 @@ def gt_token_prices_ex(chain: str, cas: list, keyed: bool = True):
                 u2 = (f"https://api.geckoterminal.com/api/v2/simple/networks/{net}"
                       f"/token_price/{','.join(miss9)}?include_total_reserve_in_usd=true")
                 try:
-                    d2 = _gj(u2, timeout=15)
+                    d2 = _gt_free(u2, timeout=15)
                     if isinstance(d2, dict):
                         p2, r2 = _gt_parse(d2, miss9)
                         b_px.update(p2)
@@ -1479,7 +1527,7 @@ def gt_token_prices_ex(chain: str, cas: list, keyed: bool = True):
                     else:
                         _GT_UNRESOLVED.update(miss9)
                 except urllib.error.HTTPError as e:
-                    _GT_ERR = ("rate" if e.code == 429 else "http", e.code, "")
+                    _GT_ERR = ("rate" if e.code == 429 else "http", "gate" if isinstance(e, GtGateWait) else e.code, "")
                     if e.code != 404:
                         _GT_UNRESOLVED.update(miss9)
                 except Exception as e:

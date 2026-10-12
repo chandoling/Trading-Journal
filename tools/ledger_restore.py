@@ -37,8 +37,9 @@ MARGIN_H = 12
 PRE_RESTORE_KEEP = 2
 UNIT_SCRIPTS = ("core.py", "unit_runner.py", "evm_watch.py", "sol_watch.py", "bsc_watch.py", "upbit_link.py", "ex_foreign.py", "web.py") \
     + tuple(reg.SPECS[c].module + ".py" for c in (reg.CHAINS if reg else ()))
-STOP_HINT = "pm2 stop tj-core tj-evm tj-sol tj-bsc tj-ex tj-exf tj-web"
-START_HINT = "pm2 start tj-core  →  (몇 분 뒤) pm2 start tj-evm tj-sol tj-bsc tj-ex tj-exf tj-web"
+EXTRA_UNIT_HINT = "".join(" tj-" + c for c in (reg.CHAINS if reg else ()))
+STOP_HINT = "pm2 stop tj-core tj-evm tj-sol tj-bsc tj-ex tj-exf" + EXTRA_UNIT_HINT + " tj-web"
+START_HINT = "pm2 start tj-core  →  (몇 분 뒤) pm2 start tj-evm tj-sol tj-bsc tj-ex tj-exf" + EXTRA_UNIT_HINT + " tj-web"
 BSC_BLOCK_S = 0.45
 SEEN_NOTIME = "#notime"
 SIG_RX = re.compile(r"[1-9A-HJ-NP-Za-km-z]{64,90}")
@@ -1001,7 +1002,7 @@ def files_plan(day: str, state_dir: str = None) -> dict:
             elif m and ".." not in m.group(1).split("__"):
                 items.append((src, os.path.join("seed_local", *m.group(1).split("__"))))
             elif n == "config_subset.json":
-                manual.append(f"{src} — config.json 의 지갑 목록(wallets)·거래소 입금주소(exchange_addresses) 사본: 필요하면 손으로 옮기세요(키·토큰은 원래 안 담김)")
+                manual.append(f"{src} — config.json 의 지갑 목록(wallets·chain_wallets)·거래소 입금주소(exchange_addresses) 사본: 필요하면 손으로 옮기세요(API 키·토큰은 원래 안 담김)")
     pj = os.path.join(bdir, f"prefs_{day}.json")
     if os.path.isfile(pj):
         d9 = _read_json(pj, None)
@@ -1083,7 +1084,7 @@ def files_apply(fp: dict, proc_check: bool = True, state_dir: str = None, log=pr
 COLLECTOR_UNITS = ("evm_watch.py", "sol_watch.py", "bsc_watch.py", "upbit_link.py", "ex_foreign.py",
                    "unit_runner.py evm", "unit_runner.py sol", "unit_runner.py bsc") \
     + tuple(x for c in (reg.CHAINS if reg else ()) for x in (reg.SPECS[c].module + ".py", "unit_runner.py " + c))
-COLLECT_STOP_HINT = "pm2 stop tj-evm tj-sol tj-bsc tj-ex tj-exf"
+COLLECT_STOP_HINT = "pm2 stop tj-evm tj-sol tj-bsc tj-ex tj-exf" + EXTRA_UNIT_HINT
 
 
 def new_ledger(apply_: bool, fresh_collect: bool = False, state_dir: str = None, log=print, proc_check: bool = True) -> int:
@@ -1147,8 +1148,8 @@ def _print_plan(p: dict, log=print):
             "원장 밖 화면 설정·보낸 내역 판정은 그대로)★")
 
 
-EPILOG = """순서: list → restore <번호>(미리보기) → pm2 stop tj-core tj-evm tj-sol tj-bsc tj-ex tj-exf tj-web → restore <번호> --apply
-      → pm2 start tj-core → (몇 분 뒤) pm2 start tj-evm tj-sol tj-bsc tj-ex tj-exf tj-web
+EPILOG = f"""순서: list → restore <번호>(미리보기) → {STOP_HINT} → restore <번호> --apply
+      → {START_HINT}
 지금 원장은 state/ledger.db.pre_restore_<시각> 으로 보존(최근 2개만 — --keep-pre) · 바꾼 수집기 상태 파일 원본은 state/restore_<시각>/.
 백업 뒤 수집분: 인박스에 백업 위치가 남았으면(다 읽은 세그먼트 기본 8일 · 스트림당 512MiB 상한 — TJ_INBOX_RETAIN_DAYS) core 가 그대로 다시 읽고,
   아니면 수집기 커서를 '백업 시각 − 여유(12시간)' 이전에 들어온 마지막 블록으로 되감는다(기준 블록이 없는 체인은 시간으로 되감고 ★ 안내).

@@ -2712,7 +2712,7 @@ def decimals_from_result(r):
     if not h:
         return None, "빈 반환(0x)"
     try:
-        dec = int(h, 16)
+        dec = int(h[:64], 16)
     except ValueError:
         return None, "hex 아님"
     if not (0 <= dec <= 77):

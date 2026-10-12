@@ -365,7 +365,7 @@ def log_legs(H, logs, dec_of, sym_of, ts_of):
         if H not in (f, t):
             continue
         try:
-            v = int(lg.get("data") or "0x0", 16)
+            v = common.log_word0(lg.get("data") or "0x0")
         except ValueError:
             continue
         tok = norm(lg.get("address"))

@@ -235,7 +235,8 @@
   "review": {
     "sell_eval_daily_max": 0,
     "buy_eval_daily_max": 0,
-    "_note": "AI 매도·매수 평가 하루 최대 호출 수 — 0 = 꺼짐(기본). 켜려면 예: 20(내 컴퓨터의 claude CLI). 일간·주간 AI 리뷰는 별도(TJ_ENABLE_REVIEW=1 로 tj-review 유닛을 켤 때만) — coach_role(리뷰 첫 줄 트레이더 설명)·known_patterns(지적하지 않을 내 운용 패턴 목록)로 내 방식에 맞춘다. 바꾼 뒤 tj-web 재시작"
+    "chart_prewarm_per_day": 0,
+    "_note": "chart_prewarm_per_day = 영수증 차트 봉 미리 받기 하루 상한(0 = 꺼짐 · 모델 호출 없음 · tj-review 재시작). AI 매도·매수 평가 하루 최대 호출 수 — 0 = 꺼짐(기본). 켜려면 예: 20(내 컴퓨터의 claude CLI). 일간·주간 AI 리뷰는 별도(TJ_ENABLE_REVIEW=1 로 tj-review 유닛을 켤 때만) — coach_role(리뷰 첫 줄 트레이더 설명)·known_patterns(지적하지 않을 내 운용 패턴 목록)로 내 방식에 맞춘다. 바꾼 뒤 tj-web 재시작"
   },
   "addr_ai": {
     "daily_max": 0,

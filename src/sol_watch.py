@@ -1953,7 +1953,7 @@ class SolWatcher:
             if big and n_done % 50 == 0:
                 self.progress.update("sol", phase="parse", unit="tx", done=n_done, total=len(todo))
                 common.write_json_if_changed(self.emitted_path, sorted(self.emitted))
-        if big:
+        if big or (self.progress.items.get("sol") or {}).get("phase") == "parse":
             self.progress.update("sol", phase="parse" if (not done_ok or sliced9) else "live", unit="tx", done=n_done,
                                  total=len(todo), flush=True)
         whole9 = done_ok and not sliced9

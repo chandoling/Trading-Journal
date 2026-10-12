@@ -3,6 +3,121 @@
 판마다 더해진 것과 바뀐 동작이에요. 지금 쓰는 법은 [README.md](README.md), 화면 사진은 README 의 '화면 미리보기'에 있어요.
 업데이트는 README [업데이트](README.md#업데이트) 순서대로(멈추기 → 백업 확인 → `git pull` → `bash tools/setup.sh` → `pm2 start ecosystem.config.js`) 하세요.
 
+## 2026-10-12 (2) — 외부 검토 2건 버그 수정 · 톤코인 GRAM 개명 · 영수증 차트 봉 미리 받기
+
+**TON 스팸 제톤 대사 보류 · TON 첫 대사 중 입금 상쇄 · 톤코인 GRAM 개명(TON 시세 0) · 새 체인 못 받은 거래 6시간마다 다시 · 대사 보류·수집 유닛 없음 주의 · EVM 긴 Transfer 로그 ·
+자동으로 끈 체인의 새 자금 경고 · 매매일지 넓은 기간 원화·교환 줄 · 새 체인 보유 줄 표시 · 보유 코인 줄 단위 쪽 넘김 · 작은 단가 원화 표기·곡선 눈금 ·
+코인게코 옛 값·1분봉 실패 기억 · NFT·GeckoTerminal 호출 줄임 · 헬스 마진 부채 스테이블 · 백업 chain_wallets · 복원 안내 새 유닛 · Bitcoin HD 범위 재시작 · 영수증 차트 봉 미리 받기(선택)**
+
+지난 판(2026-10-12)을 처음부터 읽은 외부 독립 검수 2건이 찾은 버그를 하나씩 공개 시험으로 재현해(고치기 전 실패 → 고친 뒤 통과) 가장 작은 수정으로 고친 판이에요 —
+TON 지갑에 스팸 제톤 하나만 있어도 TON 대사가 통째로 멈춰 TON 잔고가 실제보다 훨씬 작게 보이던 것, 첫 대사 중에 들어온 TON 입금을 기초 잔고가 지워 버리던 것,
+Tron·Sui·TON·Bitcoin 의 거래 상세를 장애 동안 못 받으면 그 거래가 영영 빠지고 그 체인 대사도 영영 보류되던 것, 데이터가 비정상적으로 긴 스팸 Transfer 로그 하나가 EVM·BNB Chain 수집을 몇 시간씩 멈추던 것,
+자동으로 끈 체인에 큰돈이 들어와도 경고가 안 뜨던 것 등이에요. 같은 날 톤코인의 거래소 티커가 TON 에서 GRAM 으로 바뀌어 TON 시세가 0 으로 보이던 것(지난 판 알려진 한계)도 고쳤어요.
+다음 판으로 준비하던 **영수증 차트 봉 미리 받기**(선택 · 기본 꺼짐)와, 키 없는 GeckoTerminal 이 쉬는 동안 거래소 봉으로 먼저 그리는 영수증 차트도 함께 넣었어요.
+드물거나 고치는 품이 큰 경우는 이번엔 그대로 두고 아래 알려진 한계에 적었어요. 사진은 다시 찍지 않았어요(README '이번 판' 안내).
+재현 자료까지 꼼꼼히 보내 준 외부 독립 검수 2건에 고마워요.
+
+> **업데이트** — README [업데이트](README.md#업데이트) 순서대로(멈추기 → 백업 확인 → `git pull` → `bash tools/setup.sh` → `pm2 start ecosystem.config.js` → **`pm2 save`** — 유닛을 전부 멈춘 뒤 한꺼번에 시작 ·
+> 공통 모듈(로그 해석·시세·호출 조절)이 바뀌어 이번에도 모든 유닛 · 마지막 `pm2 save` 는 README 업데이트 순서에 새로 넣은 단계예요 — 안 하면 재부팅 때 pm2 가 예전 목록을 되살려 새 체인 유닛이 빠질 수 있어요).
+> 재구축·데이터 개정은 없어요(업데이트만으로는 원장 쓰기 없음 · 새로 생기는 것 — `state/recon_hold.json`(새 체인 대사 보류 사유) · `state/candles/dex_later.json`(나중에 채울 DEX 봉) ·
+> `state/candles/prewarm.json`(미리 받기를 켰을 때) · NFT 바닥가 기록의 오픈시 오류 횟수).
+> **TON 지갑**이 스팸 제톤 때문에 대사 보류였다면 업데이트 뒤 10분쯤(제톤 정보 다시 받기) + 다음 대사 주기에 저절로 기초 잔고가 잡혀요(할 일 없음) · TON 시세는 GRAM 시장 값으로 바로 보여요 ·
+> 지난 판에서 TON 첫 대사 중 입금이 이미 상쇄된 지갑은 저절로 고쳐지지 않아요(아래 알려진 한계).
+> Tron·Sui·TON·Bitcoin 의 '거래 상세 누락'으로 남아 있던 거래는 업데이트 뒤 6시간 안에 저절로 다시 받아요.
+> **일일 자동 백업에 `chain_wallets` 가 들어가요** — 다음 백업부터예요(그 전 백업엔 없음 · 지난 판 안내대로 따로 보관한 `config.json` 은 새 백업이 생길 때까지 지우지 마세요).
+> 업데이트 뒤 상태 패널에 새로 보일 수 있는 것 — '수집 유닛 없음'(새 체인 지갑이 있는데 그 유닛이 pm2 목록에 없음 → `pm2 start ecosystem.config.js && pm2 save`) · '<체인> 기초잔고 대사 보류'(6시간 넘게) ·
+> 자동으로 끈 체인의 '미추적 체인에 잔고/활동'(업데이트 뒤 새로 들어온 자금부터) · 반대로 USD·USDE·RLUSD·USDP·USDS 마진 부채의 '값 모름' 주의는 사라져요.
+> **영수증 차트 봉 미리 받기는 기본 꺼짐**이에요 — 켜려면 `config.json` 의 `"review": {"chart_prewarm_per_day": 150}`(최대 300) 뒤 `pm2 restart tj-review`
+> (AI 리뷰 유닛 `tj-review` 를 켠 설치만 — README [AI 기능 켜기](README.md#ai-기능-켜기--claude-cli-로그인)).
+
+- **영수증 차트 — 봉 미리 받기(선택) · DEX 봉은 나중에 채움** — `config.json` 의 `review.chart_prewarm_per_day`(기본 0 = 꺼짐 · 최대 300)를 켜면 AI 리뷰 유닛(`tj-review`)이 켜질 때와 하루 회차마다
+  영수증 차트 봉을 하루 그 수만큼 한가할 때 미리 받아 영구 저장해요(영수증 한쪽 = 1 · 모델 호출 없음) — 보존 기한이 짧은 봉부터(키 없는 GeckoTerminal DEX 봉 약 180일) · 이미 받은 것은 다시 안 부름 ·
+  화면이 차트를 받는 중이면 양보 · 키 없는 GeckoTerminal·코인게코는 분당 1회·429 면 그날 멈춤 · 코인게코 키는 프로일 때 하루 몫 절반 안에서 남는 몫만(데모 키·무키는 키 장부 안 씀) · 재시작해도 하루 상한 유지.
+  기본으로 켜지는 것 — 키 없는 GeckoTerminal 이 호출 제한으로 쉬는 동안(429 쉼 · 10초 넘는 대기) 영수증 차트를 열면 DEX 봉을 기다리지 않고 같은 코인의 같은 해상도 거래소 봉으로 먼저 그려요
+  (출처 줄 '… 봉 대신 …' · '오늘 몫 소진 — DEX 봉은 나중에 채움') — 그 차트는 DEX 봉이 채워질 때까지 자동 AI 평가를 미루고, 미리 받기를 켜면 '나중에 채움' 목록도 함께 받아요 ·
+  거래소 봉도 없으면 종전처럼 DEX 봉을 기다려 받아요(DEX 에만 있는 코인은 종전과 같음).
+- **TON — 스팸 제톤이 대사 전체를 막던 것** — 자릿수를 알 수 없는 제톤(대개 스팸 에어드랍) 하나만 들고 있어도 TON 체인 대사(기초 잔고)가 통째로 보류돼 TON 잔고가 수집 기간 안 증감만큼만 보이고,
+  그 제톤이 수집 기간 안에 들어온 거래는 '거래 상세 누락'으로 떨어지던 것 고침 — toncenter 가 메타를 **무효(valid:false)로 명시**한 제톤만 그 칸을 대사에서 빼고 그 제톤 레그만 빼고 기장해요
+  (TON 과 다른 제톤 대사는 진행 · 아직 색인 전이라 메타가 없는 제톤은 종전처럼 보류 — 18자리로 짐작하지 않음).
+- **TON — 첫 대사 중 들어온 입금** — 첫 대사(새 지갑 대사 포함)가 잔고를 읽은 뒤 끝나기 전에 들어온 입금이 나중에 기록되면 그 입금을 '이미 잔고에 들어 있던 거래'로 보고 기초 잔고에서 빼,
+  보유가 실제보다 적게 남던 것(예 실제 600 TON → 100 TON) 고침 — 잔고를 읽은 계정들의 마지막 거래 시각을 경계로 남겨 그 뒤 거래는 새 증감으로 둬요(종전 = 대사 처리 시각).
+- **톤코인 → GRAM 개명** — 톤코인의 거래소 티커가 TON 에서 GRAM 으로 바뀌어(바이낸스 TONUSDT 거래 중단) TON 지갑의 TON 시세가 0 으로 보이던 것 — TON 체인 네이티브 TON 은 거래소 GRAM 시세로 평가해요
+  (화면·원장 이름은 TON 그대로 · 1분봉은 옛 티커가 비면 새 티커 · 업비트는 원화 GRAM 마켓만 — 옛 KRW-TON 값은 지갑 TON 시세로 안 씀) ·
+  같은 'TON' 기호의 이더리움 토큰(Tokamak Network 등)은 계약 주소 시세로만 — 원가 추정에서도 톤코인 1분봉을 안 받아요 · 거래소에 들고 있던 톤코인이 GRAM 으로 바뀌는 경우는 아래 알려진 한계.
+- **Tron·Sui·TON·Bitcoin — 못 받은 거래 6시간마다 다시** — 제공자 장애·하루 한도 등으로 거래 상세를 재시도 상한(약 14.6시간)까지 못 받으면 '거래 상세 누락'으로 떨어진 뒤 다시는 시도하지 않아,
+  회복 뒤에도 그 거래가 영영 빠지고 그 체인 대사도 영영 보류되던 것 고침 — 풀리지 않은 거래를 6시간마다 한 번 다시 받아 성공하면 기장하고 주의·대사 보류가 저절로 풀려요
+  (Bitcoin 재편 구간·지운 지갑은 제외 · 못 받는 동안 거래 하나당 6시간에 상세 1번 더) · 상태 패널 안내문도 실제 동작대로.
+- **상태 패널 — 대사 보류 · 수집 유닛 없음** — 새 체인 첫 기초 잔고 대사가 6시간 넘게 보류되면 '<체인> 기초잔고 대사 보류'(주의 · 사유·시작·마지막 확인 · 풀리면 사라짐 — 종전엔 tj-core 로그에만) ·
+  새 체인 지갑이 있는데 그 수집 유닛이 pm2 목록에 없으면 '수집 유닛 없음'(주의 · pm2 없이 쓰면 그 유닛 러너 기록이 없을 때 — 종전엔 조용) · README 업데이트 순서 끝에 `pm2 save`.
+- **EVM · BNB Chain — 긴 Transfer 로그** — 누가 내 주소로 데이터가 비정상적으로 긴 Transfer 로그를 남기는 스팸 토큰을 보내면 그 거래를 해석하다 그 체인 수집이 멈추고 몇 시간 뒤 그 거래가 격리되던 것 고침 —
+  표준대로 첫 32바이트(금액 자리)만 읽어요(토큰 자릿수 응답도 첫 워드) · RPC 로 받는 체인·BNB Chain·자금 경로·체인 간 짝 맞추기 모두.
+- **자동으로 끈 체인에 새 자금** — '추천 체인 자동으로 끄기'로 꺼진 체인에 그 뒤 새로 돈이 들어와도(예 $5만) '미추적 체인에 잔고/활동' 경고가 영영 안 뜨던 것 고침 —
+  끄기 전부터 활동이 있던 주소도 nonce 증가 · 네이티브 증가분 × 시세 · 스테이블 증가분이 문턱 이상이면 다시 알려요(시세만 오른 날은 아님 · 업데이트 전에 이미 들어온 자금은 다음 증가 때부터).
+- **매매일지 — 넓은 기간의 원화·교환 줄** — 매매일지 '전체 이벤트'에서 기간을 '전체'나 120일 넘게 고르면 원화 입출금·스테이블 교환(환전) 줄이 오류 없이 통째로 빠지던 것 고침 —
+  넓은 기간은 쪽(5,000건)으로 받는데 그 응답에 두 줄 묶음이 없었어요 · 이제 쪽마다 그 시각 구간의 줄만 붙여 이어 받아도 한 번씩만 나와요.
+- **새 체인 보유 줄 표시** — Tron·Sui·TON·Bitcoin 지갑의 보유·보관처 줄에 원장 안쪽 키(앞 몇 글자)가 보이던 것 → 지갑 별명이나 주소 표시 꼴(T…·UQ…·bc1… · Bitcoin HD 지갑은 'Bitcoin') ·
+  보관처 서랍 머리 칩이 Bitcoin 지갑도 '지갑 · EVM'이던 것 → 체인별('지갑 · BTC' 등 · EVM·SOL 표시는 종전 그대로).
+- **보유 코인 쪽 넘김 — 줄 단위** — 보유 코인 한 쪽이 코인 묶음(본행 + 스테이킹 등 Rabby 기준 하위 줄) 단위라 하위 줄이 많으면 한 쪽이 길어지고 '다음' 단추 위치가 쪽마다 바뀌던 것 →
+  한 쪽 = 정확히 설정 '목록 한 쪽'(10/20)줄(마지막 쪽만 짧음) · 머리 'N종'은 그대로 · 하위 줄이 있으면 쪽 바 단위가 '줄' · 찾아가기도 그 줄이 있는 쪽으로.
+- **작은 단가 · 총자산 곡선 눈금** — 원화 보기에서 $0.0001 미만 단가(밈 코인 등)가 '₩9,972e-06'처럼 깨지던 것(미매칭 '온체인 기록'·자금 경로 줄·가격 이상 안내) →
+  1달러 아래 지수 표기는 달러 원문 그대로 · 큰 지수 값($1.23457e+06)은 원화로 바르게 · 변동이 아주 작은 기간의 총자산 곡선 y축 눈금이 모두 같은 글자로 보이던 것 → 서로 다른 눈금(눈금 수는 줄 수 있어요 · 평소 곡선은 그대로).
+- **시세 — 코인게코 옛 값 · 1분봉 실패 기억** — 코인게코 간단 시세가 실패(429·예산 소진)를 이어 가면 마지막으로 받은 값을 시간 제한 없이 '방금 시세'로 돌려주던 것 → 1시간 넘은 값은 안 써요
+  (업비트에 원화 마켓 없이 들고 있는 코인 · Hyperliquid 현물 일부) · 한 화면 계산이 같은 코인의 봉 없는 옛 시각과 지금 분을 함께 물으면 옛 시각 실패 하나로 30분 동안 그 코인 현재가가 0 으로 보이던 것 →
+  직전 10분 값은 그대로 쓰고 같은 코인은 최신 분부터 받아요.
+- **호출 줄임 — NFT 바닥가 · 키 없는 GeckoTerminal** — 오픈시가 같은 오류를 내고 코인게코에도 없는 컬렉션을 30분마다 두 곳 다 다시 묻던 것(컬렉션 하나에 하루 48 + 48회) →
+  오픈시 오류 3번 연속 + 코인게코 없음 + 직전 시세 없음이면 7일 '시세 없음'(직전 시세가 있던 컬렉션은 종전대로) · 오픈시가 지원하지 않아 코인게코로만 바닥가를 받는 체인(BNB Chain·HyperEVM·Ronin 등)의
+  추적 컬렉션은 4시간마다(종전 1시간 · '오래됨'은 주기 + 1시간) · 키 없는 GeckoTerminal 을 시세·영수증 차트·미리 받기가 서로 모르게 따로 조절해 429 를 맞던 것 →
+  프로세스를 넘어 호출 간격(초당 0.15회)을 함께 써요 · 시세 조회가 429 를 받으면 같은 프로세스(tj-web)의 GeckoTerminal 호출이 60~300초 쉬고(그동안 시세 조회는 다음 차례 · 영수증 차트는 거래소 봉으로 먼저) ·
+  미리 받기는 429 면 그날 멈춰요(쉼 자체는 프로세스마다 따로) — 차트 DEX 봉 조회가 조금 느려질 수 있어요.
+- **헬스 — 마진 부채 스테이블** — 거래소 마진 부채 중 USD·USDE·RLUSD·USDP·USDS 를 상태 패널이 '값 모름'으로 봐 '… · 값 모름 N건' 주의가 뜨던 것(총자산 계산은 $1 로 이미 뺌) → 두 곳 스테이블 목록을 같은 14종으로.
+- **백업 · 복구** — 일일 자동 백업의 원장 밖 설정 사본(`config_subset.json`)에 `chain_wallets`(새 체인 지갑 · Bitcoin 공개 디스크립터·탐색 범위)가 들어가요(복원 때 자동 적용은 안 함 — 필요한 항목을 손으로 옮기는 참고 사본 · 서버 밖 둘째 백업을 켰다면 그 묶음에도 같이 가요 — 공개 키라 돈을 옮길 수는 없지만 HD 지갑 주소 전체를 알 수 있으니 받는 곳은 내 컴퓨터로) ·
+  원장 복원 도구(`tools/ledger_restore.py`)의 pm2 멈추기·켜기 안내에 새 체인 유닛(`tj-tron`·`tj-sui`·`tj-ton`·`tj-btc`) ·
+  Bitcoin HD 지갑의 `gap_limit`·`range_end` 를 바꾸면 tj-btc·tj-core 가 저절로 다시 시작해 새 범위로 찾아요(종전엔 옛 범위 그대로 · 같은 값·별칭만 바꾸면 재시작 없음).
+- **그 밖** — Solana 옛 기록 채우기 알림이 마지막 조각이 작으면(50건 이하) '받는 중'으로 남아 멈춘 것처럼 보이다 3시간 뒤 사라지던 것 → 끝나면 바로 닫힘 ·
+  자동 재시작이 없는 실행에서 지갑 등록 뒤 보이는 수동 재시작 안내가 실제로 다시 켤 유닛(새 체인 유닛 포함)을 적어 줘요 · 새 체인 대사 보류 로그에 짧은 사유 코드(허용 목록만 · 최대 3개).
+- **지난 판 한계 고침** — 지난 판 알려진 한계 중 'TON 스팸 제톤을 들고 있으면 TON 대사 보류'(제공자가 무효로 표시한 제톤) · 'TON 시세 0' · '복원 도구 pm2 안내에 새 체인 유닛 없음' ·
+  업데이트 상자의 '`chain_wallets` 는 일일 백업에 아직 없음'을 이번에 고쳤어요.
+
+**함께**
+
+- **문서** — README '이번 판'·업데이트 6단계 `pm2 save`·백업 문단(`chain_wallets`)·고급 설정 표 `review.chart_prewarm_per_day`·알려진 한계·English ·
+  [API_KEYS.md](docs/API_KEYS.md) 영수증 차트(나중에 채움·미리 받기 몫) · [COLLECTION_LIMITS.md](docs/COLLECTION_LIMITS.md) 새 체인 시세(거래소 시세 · TON = GRAM 티커)·TON 줄(무효 메타 제톤)·Bitcoin HD 범위 바꾸기 ·
+  `config.example.json` `review.chart_prewarm_per_day`.
+- **시험** — 공개 시험 추가: TON 무효 메타 제톤 대사·기장 · TON 첫 대사 경합 · 새 체인 못 받은 거래 다시 받기(실제 원장 대사 보류 → 해제) · 대사 보류·수집 유닛 없음 헬스 · 긴 Transfer 로그 data ·
+  자동으로 끈 체인 새 자금 경고 · 넓은 기간 원화·교환 줄(무작위 쪽 나눔) · 새 체인 보유 줄 표시 · 보유 줄 단위 쪽 넘김 · 지수 단가·곡선 눈금 · 톤코인 GRAM 시세 · 코인게코 값 나이 · 1분봉 실패 기억 ·
+  NFT 오류 포기 · GeckoTerminal 조절 공유 · 헬스 부채 스테이블 · 백업·복원 안내·Bitcoin HD 범위 · 대사 보류 사유 코드 · 영수증 차트 미리 받기·나중에 채움 — 전체 7,900건 넘게(파일 246개).
+
+**English · External review fixes, Toncoin GRAM rename, receipt chart prefetch** — Two independent external reviews of the previous release found new bugs; each was reproduced as a public test
+(failing before, passing after) and fixed with a minimal change. TON: a spam jetton whose metadata the provider explicitly marks invalid no longer holds the whole TON reconciliation or turns its transaction
+into a gap (only that jetton is left out; jettons not yet indexed still hold), and a deposit landing after the first reconciliation's balance sample is no longer cancelled by the opening balance.
+Toncoin's exchange ticker changed from TON to GRAM; native TON on the TON chain is now priced from GRAM markets (display and ledger keep "TON"). Tron/Sui/TON/Bitcoin transactions that ran out of
+detail retries are retried every 6 hours instead of staying gaps forever. The status panel warns when a new chain's first opening-balance reconciliation has been held for over 6 hours, and when a chain
+with wallets has no collector unit in pm2 (the README update steps now end with `pm2 save`). EVM/BNB Chain: Transfer logs with oversized data no longer stall collection (only the first 32-byte word is read).
+An auto-disabled chain that receives new funds raises the untracked-chain warning again. Journal: KRW deposit/withdrawal and stablecoin conversion rows are kept for "all" and >120-day ranges. New-chain
+holding rows show display addresses instead of internal keys; holdings pages are exactly 10/20 rows including staking sub-rows; tiny exponent prices convert correctly; flat total-asset curves get distinct
+y-axis ticks. Prices: CoinGecko simple prices older than 1 hour are no longer served as fresh, and one failed old 1-minute candle no longer blocks the current price for 30 minutes. Fewer wasted calls:
+NFT floors give up after 3 OpenSea errors plus a CoinGecko miss (7-day negative cache; CoinGecko-only chains every 4 hours), and keyless GeckoTerminal calls share one cross-process request-rate
+throttle (a 429 on price lookups pauses that process's GeckoTerminal calls for 60–300 seconds; the background prefetch stops for the day). Health margin-debt stablecoins match the dashboard's 14. Daily backups include `chain_wallets`; the restore tool's pm2 hints list the new chain units; changing a Bitcoin HD wallet's
+`gap_limit`/`range_end` restarts tj-btc and tj-core. New: optional receipt chart candle prefetch (`review.chart_prewarm_per_day`, default 0 = off, needs `tj-review`), and while keyless GeckoTerminal is
+rate-limited, receipt charts draw same-resolution exchange candles first and fill DEX candles later. No rebuild and no data revision; stop everything, run `pm2 start ecosystem.config.js`, then `pm2 save`.
+
+**알려진 한계(다음 판에)** — 자세한 설명·피하는 법은 README [알아 둘 것](README.md#알아-둘-것).
+
+- 거래소에 들고 있던 톤코인을 거래소가 GRAM 으로 바꾸면 'TON 잔고 사라짐'과 원가 모르는 'GRAM 들어옴'이 따로 보일 수 있어요(같은 코인 · 원가는 직접) ·
+  지난 판에서 TON 첫 대사 중 입금이 이미 상쇄된 지갑은 저절로 안 고쳐져요 · 잔고를 읽은 바로 그 초·계정 조회 사이 틈에 든 입금은 드물게 여전히 상쇄될 수 있어요 ·
+  제공자가 무효로 표시했다가 나중에 유효로 바꾼 제톤은 건너뛴 기록을 다시 넣지 않아요.
+- Tron·Sui 의 자릿수를 알 수 없는 스팸 토큰은 아직 대사를 보류시켜요(TON 만 고침) · 이미 대사를 마친 체인에 나중에 넣은 지갑의 대사 보류는 상태 패널에 아직 안 떠요(로그만).
+- 액면과 다른 값에 산 스테이블을 세일 입찰 환불·확인된 브리지로 옮기면 돌아온·도착한 몫의 달러 원가가 액면으로 다시 잡혀요(그 차이만큼 실현 어긋남).
+- Solana 같은 슬롯 안 매수·매도는 서명 순서로 재생돼요 · 같은 초에 65건 넘게 몰린 묶음은 EVM 도 순번을 안 써요 · 이미 저장된 같은 블록 거래의 순서 고치기는 아직 없어요.
+- 거래소 메이커 리베이트(음수 수수료)는 실현손익에 안 더해져요 · 업비트·빗썸 예약(스톱) 주문이 오래 걸려 있다 한 주기 안에 다 체결되면 체결이 빠질 수 있어요 · Bybit 403(호출 잦음)을 키 권한 없음으로 보고 6시간 쉬어요.
+- 컨트랙트 지갑(EIP-7702 위임·Safe)에서 남이 보낸 거래 안의 '내 지갑 → 밖' 내부 ETH 유출은 RPC 로 받는 체인 기본 설정에서 빠질 수 있어요(`chains.<체인>.rpc_trace: "all"` 로 피함).
+- Solana 한 확인 주기 안에 생겼다 닫힌 토큰 계정으로 온 입금 · 닫힌 스테이크 계정의 마지막 에포크 보상 · `backfill_full_history: true` 의 '첫 백필 끝' 표식은 아직 고치지 않았어요.
+- 새 체인 지갑 보관처 서랍엔 주소·복사·'이곳 기록 보기'가 아직 없어요 · 인박스를 바꾼(새로 설치·지우고 다시 만든) 뒤 옛 백업으로 복구하면 거래 일부를 건너뛸 수 있어요 — 복구는 원래 인박스로.
+- 영수증 차트 봉 미리 받기는 오늘 날짜 영수증을 다음 날 다시 받지 않아요(그 영수증을 열 때 받음) · 영수증 차트 주소에 `bg=1` 을 직접 붙이면 미리 받기 하루 상한 밖에서 배경 받기가 돌 수 있어요(로그인한 본인만).
+- 정책(그대로): 'NFT 총자산에 포함'을 켜면 남이 공짜로 준 NFT 도 바닥가·24시간 체결 1건이면 들어가요 · 장기 곡선 옛날(일봉만 있는 날) 마감가 = 그날 KST 09:00(UTC 일봉 시가).
+- 지난 판 한계(TON 제공자 응답 지연·BTC·Sui 고장 응답 반복 · 빗썸 부분 체결 뒤 취소 · 원장 복원 뒤 수동 원가 · 같은 블록 순서 옛 저장분 · Bitcoin 주소↔HD 이전 등)는 그대로예요 —
+  [2026-10-12](#2026-10-12--tron--sui--ton--bitcoin-지갑--외부-검토-버그-수정--주의-닫기--역할별-노드-선택--chainnodes) · 그중 TON 스팸 제톤(무효 표시)·TON 시세 0·복원 도구 안내·`chain_wallets` 백업은 이번에 고쳤어요.
+
 ## 2026-10-12 — Tron · Sui · TON · Bitcoin 지갑 · 외부 검토 버그 수정 · 주의 닫기 · 역할별 노드 선택 · Chainnodes
 
 **Tron·Sui·TON·Bitcoin 지갑(읽기 전용 · Bitcoin 은 HD 지갑 또는 주소 하나) · 새 체인 대사는 모르면 보류 · TON 거래소 출금 → 도착 연결 · 새 체인 지갑 검색 · 옛 Base 내부 이동 Alchemy 보완 · 역할별 노드 선택(속도·예상 남은 시간) ·

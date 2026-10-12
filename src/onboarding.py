@@ -1913,7 +1913,7 @@ class DemoBuilder:
             demo_data.fut_candles(out)
         return out
 
-    def chart_request(self, iso, sym, iv="5m", after="1h", venue=None, wait=None, side="sell", bvenue=None):
+    def chart_request(self, iso, sym, iv="5m", after="1h", venue=None, wait=None, side="sell", bvenue=None, bg=False):
         if side == "fut":
             return self.fut_chart(iso, sym, iv, venue), "ok"
         return {"ok": False, "error": "데모에는 이 차트가 없어요(합성 데이터)"}, "ok"

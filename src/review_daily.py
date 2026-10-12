@@ -117,10 +117,10 @@ STATE_TIMEOUT = 300
 STATE_MAX_AGE = 300
 
 
-def _get_json(cfg, path, timeout=STATE_TIMEOUT):
+def _get_json(cfg, path, timeout=STATE_TIMEOUT, hosts=None):
     import urllib.error
     import urllib.request
-    port, hosts = _hosts(cfg)
+    port, hosts = hosts or _hosts(cfg)
     last_err = None
     for ip in hosts:
         try:
@@ -2433,6 +2433,8 @@ def eval_one(cfg, date, sym, side, get=None, sleep=time.sleep, runner=None, binf
     r = _eval_chart(cfg, date, sym, side, get, sleep)
     if not r or not r.get("ok") or r.get("empty") or (side == "buy" and r.get("side") != "buy"):
         return "nochart"
+    if r.get("dexLater"):
+        return "nochart"
     fp, inp = r.get("evalFp"), r.get("evalInput")
     if not fp or not isinstance(inp, dict):
         return "nochart"
@@ -2567,6 +2569,300 @@ def _receipt_evals_safe(cfg):
         receipt_evals_recent(cfg)
     except Exception as e:
         log.warning("AI 매도·매수 평가 자동 생성 실패(다음 회차 재시도): %s", e)
+
+
+PREWARM_PATH = os.path.join(common.STATE_DIR, "candles", "prewarm.json")
+PREWARM_MAX = 300
+PREWARM_GAP_S = 4.0
+PREWARM_TRIES = 130
+PREWARM_BUSY_MAX = 3
+PREWARM_BUSY_WAIT_S = 15.0
+PREWARM_ERR_MAX = 5
+PREWARM_DEX_BASE = 30
+PREWARM_DEX_MAX = 200
+PREWARM_KEY_CALLS = 4
+PREWARM_DONE_MAX = 6000
+PREWARM_FROM = "2000-01-01"
+RET_D = {"dex": (179, 364), "gate": (34,), "cex": ()}
+PW_TRANSIENT = ("net", "time", "budget", "bad", "deferred", "bg_pace", "bg_stop", "fx")
+_PW_THREAD = [None]
+_PW_LAST = [0.0]
+
+
+def prewarm_per_day(cfg) -> int:
+    try:
+        v = int(((cfg or {}).get("review") or {}).get("chart_prewarm_per_day", 0))
+    except (TypeError, ValueError, AttributeError):
+        return 0
+    return max(0, min(PREWARM_MAX, v))
+
+
+def prewarm_dex_cap():
+    plan, extra = "none", 0
+    try:
+        import cgkey
+        k = cgkey.key()
+        if k:
+            plan, rec = cgkey.plan_of(k)
+            if plan == "pro":
+                import candles
+                import nft
+                b = cgkey.budget()
+                _r9, share = cgkey._record(k)
+                if candles.cgplan_basis(rec, b, share) == "pro":
+                    _pm, pd = nft.cg_key_windows(rec, b, share)
+                    used = int(b.cg_usage().get("total") or 0)
+                    extra = max(0, int(int(pd) * candles.BG_KEY_FRAC) - used) // PREWARM_KEY_CALLS
+    except Exception:
+        extra = 0
+    return min(PREWARM_DEX_MAX, PREWARM_DEX_BASE + extra), plan
+
+
+def _pw_read(day) -> dict:
+    try:
+        with open(PREWARM_PATH, "r", encoding="utf-8") as f9:
+            st = json.load(f9)
+        if not isinstance(st, dict):
+            raise ValueError("prewarm")
+    except (OSError, ValueError):
+        st = {}
+    done = st.get("done") if isinstance(st.get("done"), dict) else {}
+    if st.get("day") != day:
+        st = {"day": day, "n": 0, "dex_n": 0, "dex_stop": None}
+    out = {"day": day, "done": {str(k): v for k, v in done.items() if isinstance(v, dict)}}
+    for k9 in ("n", "dex_n"):
+        try:
+            out[k9] = max(0, int(st.get(k9) or 0))
+        except (TypeError, ValueError):
+            out[k9] = 0
+    out["dex_stop"] = st.get("dex_stop") if st.get("dex_stop") == day else None
+    return out
+
+
+def _pw_write(st) -> bool:
+    d = st.get("done") or {}
+    while len(d) > PREWARM_DONE_MAX:
+        d.pop(min(d, key=lambda k9: int((d[k9] or {}).get("at") or 0)))
+    try:
+        common.atomic_write_json(PREWARM_PATH, st)
+        return True
+    except Exception as e:
+        log.warning("미리 받기 기록 실패 — 이번 회차 끝: %s", e)
+        return False
+
+
+def ret_left(kinds, age_d):
+    fut, free = [], False
+    for k9 in (kinds or ["cex"]):
+        lims = RET_D.get(k9, ())
+        if not lims:
+            free = True
+            continue
+        nxt = [x for x in lims if x > age_d]
+        if nxt:
+            fut.append(nxt[0] - age_d)
+        elif k9 == "gate":
+            free = True
+    if fut:
+        return min(fut)
+    return None if free else "expired"
+
+
+def prewarm_order(items, later, today_iso, done=None):
+    t9 = datetime.strptime(today_iso, "%Y-%m-%d")
+    done = done or {}
+    cand = {}
+    for x in items or ():
+        d9, s9 = str(x.get("date") or ""), str(x.get("sym") or "")
+        if not d9 or not s9:
+            continue
+        for side in ("sell", "buy"):
+            cand[f"{d9}|{s9}|{side}"] = (d9, s9, side, sorted(set(x.get("vk") or ())))
+    for k9, v9 in (later or {}).items():
+        key = f"{v9['d']}|{v9['sym']}|{v9['side']}"
+        old = cand.get(key)
+        cand[key] = (v9["d"], v9["sym"], v9["side"], sorted(set(tuple(old[3] if old else ()) + ("dex",))))
+    out = []
+    for key, (d9, s9, side, kinds) in cand.items():
+        if key in done and key not in (later or {}):
+            continue
+        try:
+            age = (t9 - datetime.strptime(d9, "%Y-%m-%d")).days
+        except ValueError:
+            continue
+        if age < 0:
+            continue
+        left = ret_left(kinds, age)
+        if left == "expired":
+            continue
+        out.append((d9, s9, side, kinds, left, key in (later or {})))
+    out.sort(key=lambda r9: (r9[4] is None, r9[4] if r9[4] is not None else 0, not r9[5], r9[0], 0 if r9[2] == "sell" else 1))
+    return [r9[:5] for r9 in out]
+
+
+def _pw_judge(r, side) -> str:
+    if not isinstance(r, dict) or not r.get("ok"):
+        return "err"
+    if r.get("empty"):
+        return "done"
+    dl9 = r.get("dexLater")
+    if dl9:
+        return "stop" if dl9 == "bg_stop" else "later"
+    ch = r.get("chart")
+    if not isinstance(ch, dict):
+        return "done"
+    tried = list(ch.get("tried") or ())
+    if side == "buy":
+        segs = [s9 for s9 in (r.get("segs") or ()) if isinstance(s9, dict)]
+        if any((not s9.get("ok")) and any(t9.get("why") in PW_TRANSIENT for t9 in (s9.get("tried") or ())) for s9 in segs):
+            return "retry"
+        return "done"
+    if ch.get("ok"):
+        return "done"
+    return "retry" if any(t9.get("why") in PW_TRANSIENT for t9 in tried) else "done"
+
+
+def _pw_get(path, get, sleep):
+    for _ in range(PREWARM_TRIES):
+        try:
+            r = get(path)
+        except Exception as e:
+            return "err", common.safe_err(e)[:120]
+        if isinstance(r, dict) and r.get("ok") and r.get("status") in ("preparing", "busy"):
+            if r.get("status") == "busy":
+                return "busy", None
+            try:
+                ra = float(r.get("retryAfter") or 3)
+            except (TypeError, ValueError):
+                ra = 3.0
+            sleep(min(10.0, max(1.0, ra)))
+            continue
+        return "ok", r
+    return "timeout", None
+
+
+def prewarm_charts(cfg, get=None, sleep=time.sleep, today_iso=None, stop_check=None, dex_cap=None):
+    import urllib.parse as up9
+    import sellchart
+    n_cfg = prewarm_per_day(cfg)
+    if n_cfg <= 0:
+        return None
+    if stop_check is None:
+        stop_check = lambda: "수동 보충 진행 중" if _manual_lock_live() else ("자동 생성 멈춤(설정)" if review_paused() else None)
+    w0 = stop_check()
+    if w0:
+        log.info("영수증 봉 미리 받기 건너뜀 — %s", w0)
+        return {"stopped": w0}
+    day = today_iso or datetime.now(KST).strftime("%Y-%m-%d")
+    st = _pw_read(day)
+    if dex_cap is None:
+        dcap, plan = prewarm_dex_cap()
+    else:
+        dcap, plan = int(dex_cap), "given"
+    cnt = {"n_cfg": n_cfg, "dex_cap": dcap, "plan": plan, "asked": 0, "counted": 0, "dex": 0, "done": 0, "later": 0, "retry": 0, "err": 0,
+           "busy": 0, "skipped_dex": 0, "stopped": None}
+    if st["n"] >= n_cfg:
+        cnt["stopped"] = "하루 상한"
+        return cnt
+    if get is None:
+        hosts9 = _hosts(cfg)
+        g = lambda p9: _get_json(cfg, p9, timeout=120, hosts=hosts9)
+    else:
+        g = get
+    try:
+        lst = g(f"/api/receipt_list?from={PREWARM_FROM}&to={day}") or {}
+    except Exception as e:
+        log.warning("영수증 봉 미리 받기: 영수증 목록 조회 실패(다음 회차): %s", e)
+        cnt["stopped"] = "목록 실패"
+        return cnt
+    order = prewarm_order(lst.get("items") or [], sellchart.dex_later_read(), day, st["done"])
+    busy9 = err9 = 0
+    for d9, s9, side, kinds, left in order:
+        if st["n"] >= n_cfg:
+            cnt["stopped"] = "하루 상한"
+            break
+        if cnt["asked"] >= 2 * n_cfg:
+            cnt["stopped"] = "회차 상한"
+            break
+        w9 = stop_check()
+        if w9:
+            cnt["stopped"] = w9
+            break
+        is_dex = "dex" in kinds
+        if is_dex and (st["dex_stop"] == day or st["dex_n"] >= dcap):
+            cnt["skipped_dex"] += 1
+            continue
+        with _EVAL_GET_LOCK:
+            w8 = PREWARM_GAP_S - (time.time() - max(_PW_LAST[0], _EVAL_GET_LAST[0]))
+            if w8 > 0:
+                sleep(w8)
+            _PW_LAST[0] = _EVAL_GET_LAST[0] = time.time()
+        path = (f"/api/receipt_chart?date={d9}&sym={up9.quote(s9, safe='')}&iv=5m&after=1h&bg=1" + ("&side=buy" if side == "buy" else ""))
+        cnt["asked"] += 1
+        kind, r = _pw_get(path, g, sleep)
+        if kind == "busy":
+            cnt["busy"] += 1
+            busy9 += 1
+            if busy9 >= PREWARM_BUSY_MAX:
+                cnt["stopped"] = "화면 차트 수집 중(양보)"
+                break
+            sleep(PREWARM_BUSY_WAIT_S)
+            continue
+        busy9 = 0
+        if kind != "ok":
+            cnt["err"] += 1
+            err9 += 1
+            if err9 >= PREWARM_ERR_MAX:
+                cnt["stopped"] = f"조회 실패 연속 {err9}"
+                break
+            continue
+        err9 = 0
+        calls = r.get("calls") if isinstance(r, dict) else None
+        if calls is None or int(calls or 0) > 0:
+            st["n"] += 1
+            cnt["counted"] += 1
+            if is_dex:
+                st["dex_n"] += 1
+                cnt["dex"] += 1
+        v9 = _pw_judge(r, side)
+        key = f"{d9}|{s9}|{side}"
+        if v9 == "done":
+            st["done"][key] = {"at": int(time.time()), "r": "ok" if ((r.get("chart") or {}).get("ok")) else "none"}
+            cnt["done"] += 1
+        elif v9 == "stop":
+            st["dex_stop"] = day
+            cnt["later"] += 1
+        elif v9 == "later":
+            cnt["later"] += 1
+        else:
+            cnt[v9 if v9 in ("retry", "err") else "retry"] += 1
+        if not _pw_write(st):
+            cnt["stopped"] = "기록 실패"
+            break
+    log.info("영수증 봉 미리 받기: 차례 %d · 요청 %d · 상한에 셈 %d(DEX %d/%d · 키 %s) · 다 받음 %d · 나중에 %d · 다시 %d · 실패 %d · 양보 %d%s",
+             len(order), cnt["asked"], cnt["counted"], cnt["dex"], dcap, plan, cnt["done"], cnt["later"], cnt["retry"], cnt["err"], cnt["busy"],
+             f" · 멈춤({cnt['stopped']})" if cnt["stopped"] else "")
+    return cnt
+
+
+def _prewarm_safe(cfg):
+    try:
+        return prewarm_charts(cfg)
+    except Exception as e:
+        log.warning("영수증 봉 미리 받기 실패(다음 회차 재시도): %s", e)
+        return None
+
+
+def _prewarm_start(cfg):
+    if prewarm_per_day(cfg) <= 0:
+        return None
+    t9 = _PW_THREAD[0]
+    if t9 is not None and t9.is_alive():
+        return t9
+    t9 = threading.Thread(target=_prewarm_safe, args=(cfg,), name="tj-prewarm", daemon=True)
+    _PW_THREAD[0] = t9
+    t9.start()
+    return t9
 
 
 MANUAL_LOCK = os.path.join(common.STATE_DIR, "review_catchup_manual.lock")
@@ -3394,6 +3690,7 @@ def main():
         log.warning("주간 리뷰 보충 실패(다음 회차 재시도): %s", e)
     _refresh_templates_safe(cfg)
     _receipt_evals_safe(cfg)
+    _prewarm_start(cfg)
     ref = boot
     while True:
         now = datetime.now(KST)
@@ -3419,6 +3716,7 @@ def main():
         except Exception as e:
             log.warning("리뷰 보충 실패(다음 회차 재시도): %s", e)
         _receipt_evals_safe(cfg)
+        _prewarm_start(cfg)
         if _weekly_due(target):
             wait = (target.replace(minute=55) - datetime.now(KST)).total_seconds()
             if wait > 0:

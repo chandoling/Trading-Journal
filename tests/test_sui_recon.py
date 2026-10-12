@@ -66,7 +66,7 @@ pa = bal["per_wallet"][A]
 chk = chain_event.validate_balances(bal, "sui", {A, B})
 check("V1 경계 = 체크포인트 · 값 = 최신 · ts · 완주 · 계약 검사 통과", bal["_boundary"]["kind"] == "checkpoint" and bal["_boundary"]["value"] == str(TIP)
       and bal["_boundary"]["ts"] == ch.ts(TIP) and bal["_complete"] is False and bal.get("_why") == [chain_event.WHY_DEC_UNKNOWN, chain_event.WHY_SUM_MISMATCH]
-      and chk["why"] == ["부분 결과(_complete 아님) — 자동 보정 보류"], (bal["_boundary"], chk["why"]))
+      and chk["why"] == ["부분 결과(_complete 아님) — 자동 보정 보류 [token_decimals_unknown, token_sum_mismatch]"], (bal["_boundary"], chk["why"]))
 check("V1 모든 쪽 같은 체크포인트(atCheckpoint 고정) · 쪽 2개씩 끝까지(6줄 = 3쪽)", {c9[1]["c"] for c9 in ch.calls if c9[0] == "SuiBal"} == {TIP}
       and sum(1 for c9 in ch.calls if c9[0] == "SuiBal" and c9[1]["a"] == A) == 3, [c9 for c9 in ch.calls if c9[0] == "SuiBal"])
 check("V1 네이티브 SUI = totalBalance(코인 + 주소 잔고)", pa[("native", None)] == SUI_BAL, pa.get(("native", None)))

@@ -911,9 +911,21 @@ def _nonevm_chain_fp(chain: str, cfg: dict, genv) -> str:
 def _nonevm_unit_inputs(unit: str, cfg: dict, genv):
     import chain_registry as reg
     sp = reg.spec(unit)
-    keys = sorted(r["key"] for r in reg.wallets(cfg, unit))
+    rows = reg.wallets(cfg, unit)
+    keys = sorted(r["key"] for r in rows)
     kh = hashlib.sha256(genv(sp.key_env).encode()).hexdigest()[:8] if sp.key_env and genv(sp.key_env) else ""
-    fp = _h([keys, (cfg.get(reg.CFG_CHAIN_KEY) or {}).get(unit) if isinstance(cfg.get(reg.CFG_CHAIN_KEY), dict) else None, kh])
+    parts = [keys, (cfg.get(reg.CFG_CHAIN_KEY) or {}).get(unit) if isinstance(cfg.get(reg.CFG_CHAIN_KEY), dict) else None, kh]
+    hd = [r for r in rows if unit == "btc" and r["mode"] == "descriptor"]
+    if hd:
+        from btc_watch import MAX_INDEX
+        ranges = []
+        for r in hd:
+            e = r["entry"]
+            end = e.get("range_end")
+            end = end if isinstance(end, int) and not isinstance(end, bool) and 0 <= end < MAX_INDEX else None
+            ranges.append((r["key"], int(e.get("gap_limit", 20)), end))
+        parts.append(sorted(ranges))
+    fp = _h(parts)
     if not keys:
         return False, f"{sp.name} 지갑 없음", fp
     if not reg.available(unit):

@@ -1384,7 +1384,7 @@ class RpcSynthMixin:
                 continue
             data = lg.get("data") or "0x"
             try:
-                v = int(data, 16)
+                v = common.log_word0(data)
             except ValueError:
                 continue
             if not v:

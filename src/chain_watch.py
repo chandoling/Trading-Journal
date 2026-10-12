@@ -103,6 +103,7 @@ class Collector:
     def cycle(self) -> dict:
         self.errors = 0
         out = {}
+        self.st.requeue_gaps(self.owners)
         for lane in LANES:
             out[lane] = (self.discover(lane), self.details(lane))
         out["left"] = len(self.st.d["pending"])
