@@ -454,7 +454,7 @@ def http_json(url: str, headers: dict | None = None, data: bytes | None = None,
         h.update(headers)
     req = urllib.request.Request(url, headers=h, data=data, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with common.auth_urlopen(req, timeout=timeout) as r:
             try:
                 _gov_headers(host, path, r.headers)
             except Exception:

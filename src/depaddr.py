@@ -289,7 +289,7 @@ def http_get(url: str, headers: dict, timeout: int = 20, ex: str = ""):
     h.update(headers or {})
     req = urllib.request.Request(url, headers=h, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with common.auth_urlopen(req, timeout=timeout) as r:
             return json.loads(common.read_capped(r).decode("utf-8")), dict(r.headers)
     except urllib.error.HTTPError as e:
         try:

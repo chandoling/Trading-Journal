@@ -84,6 +84,10 @@ _CLI_PACE = threading.Lock()
 _CLI_LAST = [0.0]
 _GS = threading.local()
 _FILL_OVERRIDE = {}
+FILL_REQ_PATH = os.path.join(common.STATE_DIR, "review_fill_request.json")
+FILL_POLL_S = 60
+_FILL_BTN = [False]
+_FILL_THREAD = [None]
 
 
 def claude_bin():
@@ -2321,7 +2325,7 @@ def _run_items(run, items, work, parallel=1, pace_s=None, stop_check=None):
                 if stop["why"]:
                     return
                 w9 = stop_check() if stop_check else None
-                if not w9 and str(getattr(run, "mode", "")).startswith("daemon") and review_paused():
+                if not w9 and (str(getattr(run, "mode", "")).startswith("daemon") or _FILL_BTN[0]) and review_paused():
                     w9 = "자동 생성 멈춤(설정)"
                 if w9:
                     stop["why"] = w9
@@ -2690,7 +2694,7 @@ def prewarm_order(items, later, today_iso, done=None):
             age = (t9 - datetime.strptime(d9, "%Y-%m-%d")).days
         except ValueError:
             continue
-        if age < 0:
+        if age <= 0:
             continue
         left = ret_left(kinds, age)
         if left == "expired":
@@ -2965,7 +2969,7 @@ def _old_budget_take(day_iso: str, d: str) -> bool:
         return True
 
 
-def catch_up(cfg, since_iso=None, dry=False):
+def catch_up(cfg, since_iso=None, dry=False, before=None):
     b = None
     if not dry:
         b = claude_bin()
@@ -2979,6 +2983,8 @@ def catch_up(cfg, since_iso=None, dry=False):
         return
     st = _state_for_today(cfg)
     today_iso = _today_iso(st)
+    if before and not auto:
+        today_iso = min(today_iso, before)
     reviews = _read_reviews()
     todo = []
     if auto:
@@ -3537,7 +3543,7 @@ def weekly_refresh(cfg):
 weekly_catch_up = weekly_refresh
 
 
-def weekly_since(cfg, since_iso, dry=False):
+def weekly_since(cfg, since_iso, dry=False, before=None):
     b = None
     if not dry:
         b = claude_bin()
@@ -3546,6 +3552,8 @@ def weekly_since(cfg, since_iso, dry=False):
             return []
     st = fetch_state(cfg)
     today = _today_iso(st)
+    if before:
+        today = min(today, before)
     segs = ended_segments(today, since_iso)
     day_ev = fetch_day_events(cfg, _ev_from(min(s[1] for s in segs)), max(s[2] for s in segs)) if segs else None
     todo = weekly_plan(st, cfg, today, since_iso, day_ev=day_ev)
@@ -3575,6 +3583,73 @@ def weekly_since(cfg, since_iso, dry=False):
         log.warning("주간 보충 중단(%s) — 남은 %d개", why, len(todo) - len(done))
         return [x for x in todo if x[0][0] not in done]
     return []
+
+
+def fill_request_check(cfg) -> bool:
+    if not os.path.exists(FILL_REQ_PATH) or _paused_skip("전체 채우기"):
+        return False
+    req = common.read_control_json(FILL_REQ_PATH, None)
+    since = req.get("since") if isinstance(req, dict) else None
+    try:
+        ok9 = isinstance(since, str) and datetime.strptime(since, "%Y-%m-%d").strftime("%Y-%m-%d") == since
+    except ValueError:
+        ok9 = False
+    if req is not None and not ok9:
+        try:
+            os.replace(FILL_REQ_PATH, FILL_REQ_PATH + ".bad")
+        except OSError:
+            pass
+        log.warning("전체 채우기 요청 형식 오류 — 무시(%s.bad)", os.path.basename(FILL_REQ_PATH))
+        return False
+    if req is None:
+        return False
+    t9 = _FILL_THREAD[0]
+    if t9 is not None and t9.is_alive():
+        try:
+            os.remove(FILL_REQ_PATH)
+        except OSError:
+            pass
+        log.warning("전체 채우기 요청 무시 — 앞 요청을 아직 쓰는 중")
+        return False
+    try:
+        os.remove(FILL_REQ_PATH)
+    except OSError:
+        return False
+    if _manual_lock_live():
+        log.warning("전체 채우기 요청 무시 — 수동 보충이 이미 진행 중(%s)", MANUAL_LOCK)
+        return False
+    before = datetime.now(KST).strftime("%Y-%m-%d")
+    log.info("전체 채우기(설정 버튼) 시작 — %s 부터 %s 앞까지 일간 → 주간(배경)", since, before)
+    _FILL_BTN[0] = True
+    t9 = threading.Thread(target=_fill_run, args=(cfg, since, before, req.get("weekly", True) is not False), name="tj-review-fill", daemon=True)
+    _FILL_THREAD[0] = t9
+    t9.start()
+    return True
+
+
+def _fill_run(cfg, since, before, weekly):
+    try:
+        with _ManualLock():
+            catch_up(cfg, since, before=before)
+            if weekly and not review_paused():
+                weekly_since(cfg, since, before=before)
+    except Exception as e:
+        log.warning("전체 채우기 실패: %s", e)
+    finally:
+        _FILL_BTN[0] = False
+
+
+def _nap(secs, cfg):
+    end = time.time() + max(0.0, secs)
+    while True:
+        left = end - time.time()
+        if left <= 0:
+            return
+        time.sleep(min(FILL_POLL_S, left))
+        try:
+            fill_request_check(cfg)
+        except Exception as e:
+            log.warning("전체 채우기 요청 확인 실패(다음 확인 때): %s", e)
 
 
 def _refresh_templates_safe(cfg):
@@ -3703,10 +3778,10 @@ def main():
             tfix += timedelta(days=1)
         ref = None
         if tfix < target:
-            time.sleep(max(30, (tfix - now).total_seconds()))
+            _nap(max(30, (tfix - now).total_seconds()), cfg)
             _refresh_templates_safe(cfg)
             continue
-        time.sleep(max(30, (target - now).total_seconds()))
+        _nap(max(30, (target - now).total_seconds()), cfg)
         try:
             run_today(cfg)
         except Exception as e:

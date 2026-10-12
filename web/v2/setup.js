@@ -193,11 +193,11 @@
   const nxList = () => ((U.st && U.st.nonevm) || []).filter(c => c && NX.indexOf(c.key) >= 0);
   const NX_PH = { tron: 'T… Tron 주소 하나', sui: '0x… Sui 주소 하나(16진수 64자)', ton: 'UQ…·EQ… 또는 0:… TON 주소 하나', btc: 'bc1…·1…·3… Bitcoin 주소 하나', hd: 'zpub…·ypub…·xpub… 또는 공개 디스크립터 wpkh(…)' };
   const NX_HINT = {
-    tron: 'Tron 주소(T…) 하나 — 키 없이 받아요(TronGrid 무료 키를 .env TJ_TRONGRID_KEY 에 넣으면 빨라요)',
-    sui: 'Sui 주소(0x + 16진수 64자) 하나 — 키 없이 공개 GraphQL 로 받아요',
-    ton: 'TON 주소(UQ…·EQ…·0:…) 하나 — 키 없이 초당 1회(toncenter 무료 키를 .env TJ_TONCENTER_KEY 에 넣으면 빨라요)',
-    btc: '이 주소만 추적해요 — 잔돈 주소가 따로 생기는 지갑은 \'HD 지갑\'으로 넣어야 빠짐이 없어요',
-    hd: '확장 공개 키(zpub·ypub·xpub) 또는 공개 디스크립터 — 받는·잔돈 주소를 이 컴퓨터에서 만들어 gap 20 까지 찾아요(키를 밖으로 안 보냄)'
+    tron: ['Tron 주소(T…) 하나', '키 없이 받아요 — TronGrid 무료 키를 .env TJ_TRONGRID_KEY 에 넣으면 빨라요'],
+    sui: ['Sui 주소 하나', '0x + 16진수 64자 · 키 없이 공개 GraphQL 로 받아요'],
+    ton: ['TON 주소 하나', 'UQ…·EQ…·0:… · 키 없이 초당 1회 — toncenter 무료 키를 .env TJ_TONCENTER_KEY 에 넣으면 빨라요'],
+    btc: ['이 주소만 추적 — 잔돈 주소가 생기면 HD 지갑으로', '잔돈 주소가 따로 생기는 지갑은 \'HD 지갑\'으로 넣어야 빠짐이 없어요'],
+    hd: ['확장 공개 키(xpub 등)나 공개 디스크립터 하나', 'zpub·ypub·xpub 또는 공개 디스크립터 — 받는·잔돈 주소를 이 컴퓨터에서 만들어 gap 20 까지 찾아요(키를 밖으로 안 보냄)']
   };
   const BTC_FMT = [['wpkh', 'bc1q…(SegWit)'], ['tr', 'bc1p…(Taproot)'], ['sh(wpkh)', '3…(P2SH-SegWit)'], ['pkh', '1…(옛 주소)']];
   function nxCheck(chain, hd, s) {
@@ -222,8 +222,8 @@
     return { toks: s ? [s] : [], items: [], save: x && x.ok ? [s] : [], multi: false, onlySol: true, needChain: false, secret, nx: x || {} };
   }
   function nxMsgHTML(an) {
-    const x = an.nx, hint = NX_HINT[nxHd() ? 'hd' : U.wnet] + ' · 개인 키·시드는 절대 입력하지 마세요';
-    if (!an.toks.length) return '<span class="cap">' + esc(hint) + '</span>';
+    const x = an.nx, h9 = NX_HINT[nxHd() ? 'hd' : U.wnet] || ['', ''];
+    if (!an.toks.length) return '<span class="cap pvx" title="' + esc(h9[1]) + '">' + esc(h9[0] + ' · 개인 키·시드는 입력 금지') + '</span>';
     if (an.secret) return '<div class="su-bad" role="alert">' + esc(W_SECRET[an.secret]) + '</div>';
     if (!x.ok) return '<span class="su-bad">' + esc(x.err || '형식이 맞지 않아요') + '</span>';
     return '<span class="su-good">' + esc(x.note) + '</span>'
@@ -414,16 +414,16 @@
     gate: { url: 'https://www.gate.io/myaccount/api_key_manage', steps: ['API Keys → Create API Key → <b>API v4 Key</b>', '권한: Spot·Wallet 을 <b>Read Only</b> 로 · 선물 포지션을 보려면 Futures(무기한 계약)도 <b>Read Only</b> (Read Write·출금은 끔)', 'IP 화이트리스트에 이 서버 공인 IP', 'API Key·Secret 붙여넣기'], note: '' }
   };
   const XP_HELP = {
-    helius: { url: 'https://dashboard.helius.dev', why: 'Solana 지갑 수집에 필요해요 (무료 플랜으로 충분).', steps: ['dashboard.helius.dev 가입(무료)', 'API Keys 에서 키 복사 → 붙여넣기'] },
-    etherscan: { url: 'https://etherscan.io/myapikey', why: 'EVM 지갑이 있으면 필수(무료) — Ethereum·Arbitrum·Polygon 거래를 빠르고 빠짐없이 받아요. 없으면 공개 노드(RPC)로만 받아 옛 기록이 늦게 채워져요(최신 거래는 바로 보여요).', steps: ['etherscan.io 가입(무료) → API Keys → Add', '키 하나로 여러 체인 조회(V2) — 붙여넣기'] },
-    opensea: { url: 'https://docs.opensea.io/reference/api-keys', why: '선택 · 추천 — 넣으면 기타 자산 › NFT 의 EVM 바닥가를 오픈시에서 먼저 받아(최우선) 작은 컬렉션까지 NFT 추적이 더 원활해요. 없으면 코인게코(무료 데모 키 권장). 미검증(키 없이 공개 문서만 보고 연결).', steps: ['opensea.io 계정 → API 키 신청(무료)', '받은 키 붙여넣기'] },
-    coingecko: { url: 'https://www.coingecko.com/en/developers/dashboard', why: '선택 · 무료 — 넣으면 코인게코 시세·DEX 토큰 시세·차트·원가 시세·NFT 바닥가를 키 한도로 받아 더 빠르고 덜 막혀요(바이낸스·바이빗 가격이 있는 코인은 그대로 거래소 가격 — 키 몫이 모자라거나 실패하면 그 조회만 무료(무키)로). 키 없으면 공용 무료 한도라 NFT 바닥가는 몇 시간 걸릴 수 있어요. 유료(Pro) 키도 그대로 넣으면 데모·프로를 자동으로 알아보고, 프로는 다른 곳과 같이 쓰는 키일 수 있어 플랜 한도의 10%(기본 · 25·50·80% 로 바꿀 수 있음)만 써요. 재시작 없이 바로 써요.', steps: ['coingecko.com 무료 가입 → Developers Dashboard', '+ Add New Key 로 Demo 키 만들기(무료) — 유료 플랜 키(Pro)가 있으면 그 키를 넣어도 돼요', '받은 키(CG-…) 붙여넣기 → 저장하면 데모·프로 자동 판별'] }
+    helius: { url: 'https://dashboard.helius.dev', need: 'Solana 지갑이 있으면 필수', cost: '무료', cap: 'Solana 지갑 수집에 필요해요 — 무료 플랜으로 충분해요', more: [], steps: ['dashboard.helius.dev 가입(무료)', 'API Keys 에서 키 복사 → 붙여넣기'] },
+    etherscan: { url: 'https://etherscan.io/myapikey', need: 'EVM 지갑이 있으면 필수', cost: '무료', cap: 'Ethereum·Arbitrum·Polygon 거래를 빠르고 빠짐없이 받아요', more: ['없으면 공개 노드로만 받아 옛 기록이 늦게 채워져요 — 최신 거래는 바로 보여요'], steps: ['etherscan.io 가입(무료) → API Keys → Add', '키 하나로 여러 체인 조회(V2) — 붙여넣기'] },
+    opensea: { url: 'https://docs.opensea.io/reference/api-keys', need: '선택 · 추천', cost: '무료', cap: 'NFT 바닥가를 오픈시에서 먼저 받아 작은 컬렉션까지 원활해요', more: ['기타 자산 › NFT 의 EVM 바닥가에 가장 먼저 써요', '없으면 코인게코(무료 데모 키 권장)', '미검증 — 키 없이 공개 문서만 보고 연결했어요'], steps: ['opensea.io 계정 → API 키 신청(무료)', '받은 키 붙여넣기'] },
+    coingecko: { url: 'https://www.coingecko.com/en/developers/dashboard', head: '시세·차트·NFT 바닥가 — 데모·프로 자동 판별', need: '선택', cost: '무료 · 유료도 됨', cap: '시세·차트·원가·NFT 바닥가를 키 한도로 받아 더 빠르고 덜 막혀요', more: ['코인게코 시세·DEX 토큰 시세·차트·원가 시세·NFT 바닥가에 써요', '바이낸스·바이빗 가격이 있는 코인은 그대로 거래소 가격', '키 몫이 모자라거나 실패하면 그 조회만 무료(무키)로', '키 없으면 공용 무료 한도 — NFT 바닥가는 몇 시간 걸릴 수 있어요', '유료(Pro) 키도 그대로 넣으면 데모·프로를 자동으로 알아봐요', '프로는 다른 곳과 같이 쓰는 키일 수 있어 플랜 한도의 10%만 써요(기본 · 25·50·80% 로 바꿀 수 있음)', '재시작 없이 바로 써요'], steps: ['coingecko.com 무료 가입 → Developers Dashboard', '+ Add New Key 로 Demo 키 만들기(무료) — 유료 플랜 키(Pro)가 있으면 그 키를 넣어도 돼요', '받은 키(CG-…) 붙여넣기 → 저장하면 데모·프로 자동 판별'] }
   };
-  XP_HELP.nodereal = { url: 'https://dashboard.nodereal.io', why: '선택 · 무료 키로도 됨 — BSC 옛 기록(아카이브)을 빠르게 받아요(한 번에 5만 블록). 없으면 BSC 옛 기록은 무료 공개 노드로 천천히 받아요(최신 기록은 늘 공개 노드로 바로). Base 는 지원 안 해요.', steps: ['nodereal.io 가입(무료) → Dashboard → Create API Key', 'BSC 엔드포인트 주소 끝의 키만(…/v1/ 뒤) 붙여넣기'] };
-  XP_HELP.ankr = { url: 'https://www.ankr.com/rpc/', why: 'EVM 지갑이 있으면 필수(무료 Freemium) — 오래 안 쓴 지갑에 들어온 토큰을 10분마다 빠르게 확인하고, BSC·Base 옛 기록(아카이브)을 키 하나로 받아요(한 번에 3천 블록). 같은 키로 지갑 토큰 찾기도 보조해요(Advanced API). 없으면 무료 공개 노드로만 받아 늦을 수 있어요. 무료 한도의 80% 아래로만 써요. 저장할 때 연결을 한 번 확인해요(키가 거부되면 저장하지 않아요).', steps: ['ankr.com 가입(무료 Freemium) → Projects 에서 API 키', 'rpc.ankr.com/…/ 뒤의 키만 붙여넣기 → 저장(연결 확인 1번)'] };
-  XP_HELP.quicknode = { url: 'https://dashboard.quicknode.com', why: '선택 · QuickNode 유료 요금제나 1개월 무료 체험(크레딧 1,000만·초당 15) 키가 있으면 넣으세요 — 체험이 끝나면 유료로 바꾸거나 키를 지우세요(키가 계속 거부되면 알아서 빼고 기본 노드로 돌아가요). 멀티체인 엔드포인트 주소 하나만 넣으면 체인별 주소는 알아서 만들어요. 잘하는 일(Base 거래의 내부 이동 trace · 남는 몫으로 옛 잔고)에만 쓰고, 블록 훑기(getLogs)는 그걸 잘하는 다른 노드가 맡아요. 없어도 돼요 — 기본 노드로 받아요. 사용 한도는 체험 한도·유료 월 한도의 80%(기본 — 유료는 비율을 고를 수 있어요).', steps: ['QuickNode 대시보드 → Endpoints (없으면 Create Endpoint — 멀티체인)', '엔드포인트 주소(https://….quiknode.pro/…/ — 아무 체인 주소 하나)를 붙여넣기'] };
-  XP_HELP.alchemy = { url: 'https://dashboard.alchemy.com/signup', why: 'EVM 지갑이 있으면 필수(무료) — 지갑이 한 번이라도 주고받은 토큰 전부와 지금 잔고를 찾아 오래 들고만 있던 토큰도 빠뜨리지 않아요(Base·Ethereum·Arbitrum 등). 없으면 옛 보유 토큰 찾기가 약해져요(탐색기 한 곳만). 무료 한도의 80% 아래로만 써요.', steps: ['dashboard.alchemy.com/signup 가입(무료)', 'Create new app → 네트워크는 전부 켠 채로(기본값) → API Key 복사', '키만(https://…/v2/ 뒤의 값) 붙여넣기 → 연결 테스트(Ethereum·Base 1번씩)'] };
-  XP_HELP.chainnodes = { url: 'https://www.chainnodes.org/', why: '선택 · 무료 Core(월 1,250만 요청·초당 25 — 요청 단위)로 Base 거래의 내부 이동 확인(trace)에 먼저 써요. 최근 약 한 달 반 거래까지 되고, 그보다 옛 거래는 다음 노드(QuickNode 키가 있으면 그것 · 없으면 기본 노드)가 맡아요. 블록 훑기·잔고에는 안 써요. 사용 한도는 월 한도의 80% · 한도에 걸리면 잠깐 쉬고 다음 노드로 넘겨요.', steps: ['chainnodes.org 에서 무료 Core 가입', '대시보드의 API 키(또는 Base 주소 https://base-mainnet.chainnodes.org/…)를 복사 → 붙여넣기(주소를 넣으면 키만 저장해요)'] };
+  XP_HELP.nodereal = { url: 'https://dashboard.nodereal.io', need: '선택', cost: '무료 키로도 됨', cap: 'BSC 옛 기록을 빠르게 받아요(한 번에 5만 블록)', more: ['없으면 BSC 옛 기록은 무료 공개 노드로 천천히 받아요', '최신 기록은 늘 공개 노드로 바로 받아요', 'Base 는 지원 안 해요'], steps: ['nodereal.io 가입(무료) → Dashboard → Create API Key', 'BSC 엔드포인트 주소 끝의 키만(…/v1/ 뒤) 붙여넣기'] };
+  XP_HELP.ankr = { url: 'https://www.ankr.com/rpc/', need: 'EVM 지갑이 있으면 필수', cost: '무료', cap: '쉬는 지갑에 들어온 토큰을 10분마다 확인하고 BSC·Base 옛 기록을 받아요', more: ['BSC·Base 옛 기록을 키 하나로 받아요(한 번에 3천 블록)', '같은 키로 지갑 토큰 찾기도 보조해요', '없으면 무료 공개 노드로만 받아 늦을 수 있어요', '무료 한도의 80% 아래로만 써요', '저장할 때 연결을 한 번 확인해요 — 키가 거부되면 저장하지 않아요'], steps: ['ankr.com 가입(무료 Freemium) → Projects 에서 API 키', 'rpc.ankr.com/…/ 뒤의 키만 붙여넣기 → 저장(연결 확인 1번)'] };
+  XP_HELP.quicknode = { url: 'https://dashboard.quicknode.com', head: '유료·1개월 체험 · 멀티체인 주소 하나', need: '선택', cost: '유료 · 1개월 체험', cap: 'Base 거래의 내부 이동 확인과 옛 잔고에 써요 — 없어도 기본 노드로 받아요', more: ['1개월 무료 체험(크레딧 1,000만·초당 15)도 돼요 — 끝나면 유료로 바꾸거나 키를 지우세요', '키가 계속 거부되면 알아서 빼고 기본 노드로 돌아가요', '멀티체인 엔드포인트 주소 하나만 넣으면 체인별 주소는 알아서 만들어요', '사용 한도 = 체험 한도·유료 월 한도의 80%(기본 · 유료는 비율을 고를 수 있어요)'], steps: ['QuickNode 대시보드 → Endpoints (없으면 Create Endpoint — 멀티체인)', '엔드포인트 주소(https://….quiknode.pro/…/ — 아무 체인 주소 하나)를 붙여넣기'] };
+  XP_HELP.alchemy = { url: 'https://dashboard.alchemy.com/signup', need: 'EVM 지갑이 있으면 필수', cost: '무료', cap: '지갑이 주고받은 토큰 전부와 지금 잔고를 찾아 옛 보유 토큰도 빠뜨리지 않아요', more: ['Base·Ethereum·Arbitrum 등', '없으면 옛 보유 토큰 찾기가 약해져요(탐색기 한 곳만)', '무료 한도의 80% 아래로만 써요'], steps: ['dashboard.alchemy.com/signup 가입(무료)', 'Create new app → 네트워크는 전부 켠 채로(기본값) → API Key 복사', '키만(https://…/v2/ 뒤의 값) 붙여넣기 → 연결 테스트(Ethereum·Base 1번씩)'] };
+  XP_HELP.chainnodes = { url: 'https://www.chainnodes.org/', head: '무료 월 1,250만 요청 · Base 내부 이동', need: '선택', cost: '무료', cap: 'Base 거래의 내부 이동 확인에 가장 먼저 써요', more: ['무료 Core = 월 1,250만 요청 · 초당 25', '최근 약 한 달 반 거래까지 — 그보다 옛 거래는 다음 노드가 맡아요', '블록 훑기·잔고에는 안 써요', '사용 한도 = 월 한도의 80% · 걸리면 잠깐 쉬고 다음 노드로 넘겨요'], steps: ['chainnodes.org 에서 무료 Core 가입', '대시보드의 API 키(또는 Base 주소 https://base-mainnet.chainnodes.org/…)를 복사 → 붙여넣기(주소를 넣으면 키만 저장해요)'] };
   const NODE_KEYS = ['nodereal', 'ankr', 'chainnodes', 'quicknode', 'alchemy'];
   const EX_ORDER = ['upbit', 'bithumb', 'binance', 'bybit', 'okx', 'kucoin', 'gate'];
   const STEPS = [{ k: 'wallets', t: '지갑' }, { k: 'keys', t: '탐색기 키' }, { k: 'exchanges', t: '거래소' }, { k: 'telegram', t: '텔레그램' }, { k: 'finish', t: '표시·완료' }];
@@ -434,6 +434,7 @@
     st: null, err: null, open: false, step: 0, where: null, panelOpen: SS.get('tj_su_open') === '1',
     d: {}, chains: null, ex: null, xp: null, test: {}, ip: '', busy: {}, dpWait: {}, dpPoll: null,
     ack: {}, needAck: {}, perm: null,
+    more: {},
     wRes: null, wErr: {},
     tg: { phase: 'idle', err: '', bot: null, link: '', start: '', left: 0, manual: false, poll: null }
   };
@@ -521,7 +522,7 @@
       + '<input class="field' + (an.multi ? ' hidden' : '') + '" id="suWLabel" style="width:170px" data-su-in="w_label" placeholder="이름 (예: 메인)" maxlength="24" aria-label="지갑 이름"></div>'
       + '<div class="su-vmsg" id="suVmsg">' + wMsgHTML(an) + '</div>'
       + '<div class="su-chains' + (an.onlySol ? ' hidden' : '') + '" id="suChains"><div class="cap" style="margin-bottom:6px">EVM 체인 선택 · 같은 주소를 체인별로 추적해요 <button class="link" data-su="chainAll">전체</button> · <button class="link" data-su="chainNone">해제</button></div><div class="su-chiprow">' + chips + '</div></div>'
-      + '<div class="su-actions"><button class="btn pri" id="suWadd" data-su="wadd"' + (wb.dis ? ' disabled' : '') + '>' + esc(wb.t) + '</button><span class="cap su-kbd">Enter = 줄바꿈(다음 주소) · ⌘/Ctrl+Enter = 추가</span></div>'
+      + '<div class="su-actions"><button class="btn pri" id="suWadd" data-su="wadd"' + (wb.dis ? ' disabled' : '') + '>' + esc(wb.t) + '</button><span class="cap su-kbd">' + (nxOn() ? '' : 'Enter = 줄바꿈(다음 주소) · ') + '⌘/Ctrl+Enter = 추가</span></div>'
       + wResHTML()
       + list + (ws.some(w => w.kind === 'sol') && st.solNeedsHelius && !st.explorers.helius.set ? '<div class="bnr w" style="margin-top:12px"><div><b>Solana 지갑은 Helius 키가 필요해요</b><div class="bd">다음 단계에서 무료 키를 넣으면 Solana 수집이 시작돼요.</div></div></div>' : '')
       + evmKeyBanner(st) + '</div>';
@@ -602,25 +603,43 @@
         + '<input class="field" inputmode="numeric" data-su-in="nm_' + esc(k) + '" placeholder="' + (n.month ? esc(fmtN(n.month)) : '예: 50000000') + '" aria-label="' + esc(n.name) + ' 월 한도"></label>'
         + '<div class="su-actions"><button class="btn sm" data-su="nmonth" data-p="' + esc(k) + '"' + (busy ? ' disabled' : '') + '>월 한도 저장</button></div>'
       : '';
-    const use = (n.chains && n.chains.length ? '지금 쓰는 체인: ' + n.chains.map(c => c.toUpperCase()).join('·') + ' · ' : '')
-      + (n.plan === 'paid' ? '월 한도 × ' + n.share + '%' : (trial ? '체험 한도의 ' : '무료 한도의 ') + n.pct + '%') + ' = 하루 약 ' + fmtN(n.perDay) + ' ' + unit
-      + (typeof n.usedToday === 'number' ? ' · 오늘 쓴 양 ' + fmtN(n.usedToday) + (n.bursting ? ' · 버스트 중' : '') : '')
-      + (typeof n.burstCap === 'number' ? ' · 실시간 하루 약 ' + fmtN(n.rtDay || 0) + ' · 오늘 백필 상한 ' + fmtN(n.burstCap) : '');
-    const note = n.traceOnly
-      ? 'Base 거래의 내부 이동(trace)에 먼저 써요 — 블록 훑기·잔고에는 안 써요. 최근 약 한 달 반보다 옛 거래나 한도에 걸린 동안은 다음 노드(QuickNode · 기본 노드)로 넘겨요(모든 노드가 못 줄 때만 오류). 바꾸면 수집기가 자동으로 다시 시작해요.'
-      : n.noLogs
-      ? 'Base 거래의 내부 이동(trace)에 쓰고(Chainnodes 키가 있으면 그다음 · 그 뒤 기본 노드), 남는 몫으로 BSC·Base 옛 잔고·nonce 확인(따라잡기)에도 써요 — 블록 훑기(getLogs)는 안 써요(그건 공개 노드·Ankr·NodeReal 이 맡아요). trace 가 잠깐 실패하거나 하루 몫을 다 쓰면 같은 차례에 다음 노드로 넘기고, 모든 노드가 못 주면 오류로 보여 준 뒤 다음 차례에 다시 해요. 키가 계속 거부되면(체험 끝·크레딧 소진) 알아서 빼고 기본 노드로 돌아가요. 바꾸면 수집기가 자동으로 다시 시작해요.'
-      : k === 'ankr' && n.pool !== false
-      ? '쉬는 지갑에 들어온 토큰을 10분마다 확인하고(받음 탐지), 옛 기록은 처음 한 번만 채워요 — 최신 기록은 늘 공개 노드로 먼저 받고, 이 키는 받음 탐지·옛 기록·옛 거래 상세에 써요(진행·남은 시간 = 상단 상태 칩). 바꾸면 수집기가 자동으로 다시 시작해요.'
-      : n.pool === false
-      ? '지갑 토큰·잔고 찾기에만 써요 — 처음 한 번 전부 확인하고, 그 뒤엔 무료 노드로 움직임이 보인 지갑만 다시 물어요(감시·옛 기록은 무료 노드). 하루 몫을 다 쓰면 그날(UTC)은 쉬고 다음 날 이어서 해요. 키는 저장하면 바로 쓰고, 요금제를 바꾸면 수집기가 자동으로 다시 시작해요.'
-      : '옛 기록은 처음 한 번만 채우고, 최신 기록은 늘 공개 노드로 먼저 받아요 — 이 키는 옛 기록·옛 거래 상세에만 써요(진행·남은 시간 = 상단 상태 칩). 바꾸면 수집기가 자동으로 다시 시작해요.';
+    const share = n.plan === 'paid' ? '월 한도 × ' + n.share + '%' : (trial ? '체험 한도의 ' : '무료 한도의 ') + n.pct + '%';
+    const used = typeof n.usedToday === 'number' ? n.usedToday : null;
+    const pct9 = used != null && n.perDay > 0 ? Math.min(100, Math.round(100 * used / n.perDay)) : 0;
+    const use = '<div class="su-brow su-npuse pvx"><div class="su-brh"><b>' + (used != null ? '오늘 쓴 양' : '하루 몫') + '</b><span class="num">' + (used != null ? fmtN(used) + ' / ' : '약 ') + fmtN(n.perDay) + '<span class="cap"> ' + esc(unit) + ' · 하루</span></span></div>'
+      + (used != null ? '<div class="su-bbar" role="img" aria-label="' + esc('오늘 쓴 양 · 하루 몫의 ' + pct9 + '%') + '"><i style="width:' + pct9 + '%"></i></div>' : '')
+      + '<div class="cap">하루 몫 = ' + esc(share) + (n.bursting ? ' · 버스트 중(첫 수집이라 몫을 당겨 써요)' : '') + '</div></div>';
     const fresh = FRESH_CHIP && n.burstX > 1 && freshKeySet(st, k) ? '<div class="su-chiprow" role="group" aria-label="' + esc(n.name) + ' 새로 받은 키" style="align-items:center;margin-top:6px">'
       + '<button class="su-chip' + (n.freshSince ? ' on' : '') + '" data-su="nfresh" data-p="' + esc(k) + '" aria-pressed="' + !!n.freshSince + '"' + (busy ? ' disabled' : '') + '>새로 받은 키(지난 사용 없음)</button>'
       + '<span class="cap">' + esc(n.freshSince ? n.freshSince + ' 에 새로 받은 키로 봐요 — 그 전 기록 없는 날은 0(키를 바꿔 저장하면 꺼져요)' : '다른 곳에서 쓰던 키가 아니면 켜세요 — 끄면 기록 없는 지난날을 평소 몫으로 셈(업그레이드 뒤 한 달은 버스트가 거의 없음)') + '</span></div>' : '';
-    const bnote = n.burstX > 1 ? ' 백필·첫 전수 중엔 실시간 실측(× 1.5 · 앞으로 30일 몫)만 남기고 하루 몫의 ' + n.burstX + '배(열흘치)까지 당겨 써요 — 이 봇이 실제로 쓴 양으로 판단해 자동(켤 것 없음) · 최근 31일 합은 월 한도의 ' + n.pct + '% 안 · 실시간이 늘면 백필이 바로 물러나요.' : '';
     const rj = n.rejected ? '<div class="su-warnline" role="status"><b>키 거부됨(체험 끝났을 수 있음)</b> — ' + esc((n.rejected.since ? new Date(n.rejected.since * 1000).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + '부터 ' : '') + 'QuickNode 가 이 키를 계속 거부해서 ' + ((n.rejected.chains || []).map(c => String(c).toUpperCase()).join('·') || '') + ' 에서 빼고 기본 노드로 받고 있어요' + (n.rejected.code ? '(HTTP ' + n.rejected.code + ')' : '') + '. 유료로 바꿨으면 아래 \'연결 테스트\'를 누르세요 — 통과하면 다시 써요. 안 쓸 거면 키를 지워도 돼요.') + '</div>' : '';
-    return '<div class="cap su-p su-cgplan">' + rj + esc(use) + plan + paid + fresh + '<div class="cap" style="margin-top:4px">' + esc(note + bnote) + '</div></div>';
+    return '<div class="cap su-p su-cgplan">' + rj + use + plan + paid + fresh + '</div>';
+  }
+  function nodeMoreLines(st, k) {
+    const n = st && st.nodes && st.nodes[k];
+    if (!n || k === 'helius') return [];
+    const L9 = [];
+    if (n.chains && n.chains.length) L9.push('지금 쓰는 체인: ' + n.chains.map(c => c.toUpperCase()).join('·'));
+    if (typeof n.burstCap === 'number') L9.push('실시간 하루 약 ' + fmtN(n.rtDay || 0) + ' · 오늘 백필 상한 ' + fmtN(n.burstCap));
+    if (n.traceOnly) L9.push('한도에 걸린 동안은 다음 노드로 넘겨요 — 모든 노드가 못 줄 때만 오류');
+    else if (n.noLogs) L9.push('남는 몫으로 BSC·Base 옛 잔고 확인(따라잡기)에도 써요', '블록 훑기는 안 써요 — 공개 노드·Ankr·NodeReal 이 맡아요', '잠깐 실패하거나 하루 몫을 다 쓰면 같은 차례에 다음 노드로 · 모든 노드가 못 주면 오류로 보여 준 뒤 다음 차례에 다시 해요');
+    else if (k === 'ankr' && n.pool !== false) L9.push('옛 기록은 처음 한 번만 채우고, 최신 기록은 늘 공개 노드로 먼저 받아요', '이 키 = 받음 확인·옛 기록·옛 거래 상세(진행·남은 시간 = 상단 상태 칩)');
+    else if (n.pool === false) L9.push('처음 한 번 전부 확인하고, 그 뒤엔 움직임이 보인 지갑만 다시 물어요(감시·옛 기록은 무료 노드)', '하루 몫을 다 쓰면 그날(UTC)은 쉬고 다음 날 이어서 해요');
+    else L9.push('옛 기록은 처음 한 번만 채우고, 최신 기록은 늘 공개 노드로 먼저 받아요', '이 키는 옛 기록·옛 거래 상세에만 써요(진행·남은 시간 = 상단 상태 칩)');
+    if (n.burstX > 1) L9.push('백필·첫 전수 중엔 하루 몫의 ' + n.burstX + '배(열흘치)까지 당겨 써요 — 실시간 실측(× 1.5 · 앞으로 30일 몫)은 남기고 자동 · 최근 31일 합은 월 한도의 ' + n.pct + '% 안 · 실시간이 늘면 바로 물러나요');
+    L9.push(n.pool === false && !n.traceOnly ? '키는 저장하면 바로 쓰고, 요금제를 바꾸면 수집기가 자동으로 다시 시작해요' : '바꾸면 수집기가 자동으로 다시 시작해요');
+    return L9.map(esc);
+  }
+  function nodeOrderHTML(st, k) {
+    const n = st && st.nodes && st.nodes[k];
+    if (!n || !(n.traceOnly || n.noLogs)) return '';
+    const seq = [['chainnodes', '① Chainnodes'], ['quicknode', '② QuickNode'], ['', '③ 기본 노드']];
+    return '<div class="su-chiprow su-xpord" role="list" aria-label="Base 내부 이동 확인 순서"><span class="cap">Base 내부 이동 확인 순서</span>'
+      + seq.map((x, i) => (i ? '<span class="cap" aria-hidden="true">→</span>' : '') + '<span role="listitem" class="pill ' + (x[0] === k ? 'a' : 'g') + '">' + esc(x[1]) + '</span>').join('') + '</div>';
+  }
+  function suMore(key, lines, label, cls) {
+    if (!lines || !lines.length) return '';
+    return '<details class="covd su-more' + (cls ? ' ' + cls : '') + '" data-su-more="' + esc(key) + '"' + (U.more[key] ? ' open' : '') + '><summary><span class="cap">' + esc(label || '자세히') + '</span></summary><ul class="su-mol">' + lines.map(s => '<li>' + s + '</li>').join('') + '</ul></details>';
   }
   function heliusFreshHTML(st) {
     if (!FRESH_CHIP || !freshKeySet(st, 'helius')) return '';
@@ -651,7 +670,7 @@
     if (k === 'etherscan') return st.evmNeedsKeys ? pill('w', 'EVM 필수') : pill('g', 'EVM 지갑이 있으면 필수');
     if (k === 'alchemy' && 'evmNeedsAlchemy' in st) return st.evmNeedsAlchemy ? pill('w', 'EVM 필수') : pill('g', 'EVM 지갑이 있으면 필수');
     if (k === 'ankr' && 'evmNeedsAnkr' in st) return st.evmNeedsAnkr ? pill('w', 'EVM 필수') : pill('g', 'EVM 지갑이 있으면 필수');
-    if (desc) return '<span class="pill g su-xpd">' + esc('선택 · ' + desc) + '</span>';
+    if (desc) return '<span class="pill g su-xpd pvx">' + esc('선택 · ' + desc) + '</span>';
     return pill('g', k === 'coingecko' ? '선택 · 무료' : '선택');
   }
   function xpName(name) {
@@ -667,9 +686,12 @@
       + ['helius', 'etherscan', 'alchemy', 'ankr', 'coingecko', 'opensea'].concat(NODE_KEYS.filter(k => k !== 'alchemy' && k !== 'ankr')).filter(k => st.explorers[k]).map(k => {
         const g = st.explorers[k], h = XP_HELP[k], open = U.xp === k || (U.xp == null && k === 'helius'), nm = xpName(g.name);
         return '<div class="su-acc' + (open ? ' open' : '') + '"><button class="su-acch" data-su="xp" data-v="' + k + '" aria-expanded="' + open + '"' + (nm.d ? ' title="' + esc(g.name) + '"' : '') + '><b>' + esc(nm.t) + '</b>'
-          + ' ' + xpPill(st, k, nm.d)
+          + ' ' + xpPill(st, k, (h && h.head) || nm.d)
           + '<span class="sp"></span>' + (st.nodes && st.nodes[k] && st.nodes[k].rejected ? pill('w', '키 거부됨') : pill(g.set ? 'ok' : 'g', g.set ? '저장됨' + (g.plan && g.plan.plan ? ' · ' + (g.plan.plan === 'pro' ? '프로' : '데모') : '') : '미설정')) + '</button>'
-          + (open ? '<div class="su-accb">' + fieldsHTML(k, g, cgPlanHTML(g) + nodePlanHTML(st, k) + '<div class="cap su-p">' + esc(h.why) + ' <a href="' + h.url + '" target="_blank" rel="noopener noreferrer">발급 페이지 ↗</a></div><ol class="su-ol">' + h.steps.map(s => '<li>' + esc(s) + '</li>').join('') + '</ol>') + '</div>' : '') + '</div>';
+          + (open ? '<div class="su-accb">' + fieldsHTML(k, g, '<div class="su-chiprow su-xpbadge">' + pill(/필수/.test(h.need) ? 'w' : 'g', h.need) + pill(/^무료/.test(h.cost) ? 'ok' : 'a', h.cost) + '</div>'
+            + '<div class="cap su-p su-xpcap pvx">' + esc(h.cap) + ' <a href="' + h.url + '" target="_blank" rel="noopener noreferrer">발급 페이지 ↗</a></div>'
+            + cgPlanHTML(g) + nodePlanHTML(st, k) + nodeOrderHTML(st, k) + suMore('xp:' + k, h.more.map(esc).concat(nodeMoreLines(st, k)), '', 'pvx')
+            + '<ol class="su-ol">' + h.steps.map(s => '<li>' + esc(s) + '</li>').join('') + '</ol>') + '</div>' : '') + '</div>';
       }).join('') + '</div>';
   }
   function ago(ts) {
@@ -735,7 +757,9 @@
     if (!a.runner) return '<div class="su-apply"><b>적용</b><div class="cap">수집기를 따로 실행 중이에요 — 지갑·키를 바꾼 뒤 한 번 재시작하세요 (거래소 키·텔레그램은 재시작 없이 1분 안에 반영).</div><div class="su-form" style="margin-top:8px"><code class="su-code su-grow">' + esc(a.manual) + '</code><button class="btn sm" data-su="copy" data-v="' + esc(a.manual) + '">복사</button></div></div>';
     const us = a.units || {};
     const rl = a.mode === 'reload';
-    return '<div class="su-apply"><b>적용 상태</b><div class="cap">' + (rl ? '지갑을 넣으면 약 30초 안에 수집기가 자동으로 다시 시작해요. 탐색기 키를 바꾸면 한 번 재시작하세요 (거래소 키·텔레그램은 재시작 없이 1분 안에 반영).' : '설정을 바꾸면 해당 수집기가 약 30초 안에 스스로 다시 시작해요. 거래소 키·텔레그램은 재시작 없이 1분 안에 반영돼요.') + '</div><div class="su-units">'
+    const ap9 = rl ? ['지갑은 약 30초 안에 자동 적용 · 탐색기 키는 재시작 한 번', '지갑을 넣으면 약 30초 안에 수집기가 자동으로 다시 시작해요. 탐색기 키를 바꾸면 한 번 재시작하세요 (거래소 키·텔레그램은 재시작 없이 1분 안에 반영).']
+      : ['바꾸면 약 30초 안에 자동 적용 · 거래소 키·텔레그램은 1분 안', '설정을 바꾸면 해당 수집기가 약 30초 안에 스스로 다시 시작해요. 거래소 키·텔레그램은 재시작 없이 1분 안에 반영돼요.'];
+    return '<div class="su-apply"><b>적용 상태</b><div class="cap" title="' + esc(ap9[1]) + '">' + esc(ap9[0]) + '</div><div class="su-units">'
       + Object.keys(UNIT_KO).concat(Object.keys(UNIT_NX).filter(u => us[u])).map(u => { const x = us[u] || {}; const cls = x.state === 'applied' ? 'ok' : x.state === 'pending' ? 'a' : x.state === 'manual' ? 'w' : x.state === 'waiting' ? 'g' : 'g';
         const t = x.state === 'applied' ? '적용됨' : x.state === 'pending' ? '적용 중' : x.state === 'manual' ? '재시작 필요' : x.state === 'waiting' ? '대기' : '—';
         return '<div class="su-unit"><span>' + (UNIT_KO[u] || UNIT_NX[u]) + '</span>' + pill(cls, t) + (x.state === 'waiting' && x.why ? '<div class="cap">' + esc(x.why) + '</div>' : '') + '</div>'; }).join('') + '</div>'
@@ -786,7 +810,8 @@
       + '<button class="btn pri" data-su="padd"' + (U.busy.padd || !d ? ' disabled' : '') + '>주소 추가</button></span></div>'
       + '<div class="su-vmsg" id="suPvmsg">' + perpVmsg(d, draft('p_addr')) + '</div>'
       + list
-      + '<div class="cap su-p" style="margin-top:12px">주소만으로는 못 읽는 곳: Aster·Paradex·GRVT·edgeX(덱스 API 키·서명 필요) · Drift(공개 데이터 API 응답 없음) · Vertex(종료). 덱스별로 받는 범위·못 받는 것은 <b>설정 › 수집 한계 › 거래소·체인별 한계 정리 › 퍼프 덱스</b>에 적어 두었어요.</div></div>';
+      + '<div class="cap su-p" style="margin-top:12px;margin-bottom:0">주소만으로는 못 읽는 곳: Aster·Paradex·GRVT·edgeX·Drift·Vertex</div>'
+      + suMore('perp:no', ['Aster·Paradex·GRVT·edgeX — 덱스 API 키·서명 필요', 'Drift — 공개 데이터 API 응답 없음', 'Vertex — 종료', '덱스별로 받는 범위·못 받는 것 = <b>설정 › 수집 한계 › 거래소·체인별 한계 정리 › 퍼프 덱스</b>']) + '</div>';
   }
   const SEC = { wallets: walletsHTML, perp: perpHTML, keys: keysHTML, exchanges: exchangesHTML, telegram: tgHTML, finish: finishHTML };
 
@@ -901,14 +926,15 @@
     const stale = sc.filter(x => x.stale).length ? '<div class="cap su-badt">수집기 장부가 30분 넘게 갱신되지 않았어요 — 수집기 상태를 확인하세요</div>' : '';
     return '<div class="su-tier pvx">' + tiles + steps + warn + stale
       + '<div class="su-th">하루 예상 호출 <span class="cap">(지금 등록 상태 · 쉬는 주소는 1시간마다 탐색기 확인)</span></div>' + budgetRows(T)
-      + '<div class="cap su-tnote">쉬는 주소(7일 넘게 안 보낸 주소)도 10분마다 잔고를 보고 1시간마다 탐색기로 확인해요 — 들어온 입금은 늦어도 약 1시간 안에 기록돼요(거래소에서 내 지갑으로 보낸 출금이 전송 중이면 그 주소는 10분마다 확인). 내가 보내면(서명) 바로 지금 주기로 돌아와요.</div>'
+      + '<div class="cap su-tnote">쉬는 주소(7일 넘게 안 보낸 주소)도 들어온 입금은 늦어도 약 1시간 안에 기록돼요</div>'
+      + suMore('tier:rest', ['10분마다 잔고만 보고(탐색기 0콜) 바뀌면 그때 탐색기로 복구 · 1시간마다 탐색기로 받침 확인', '토큰 입금은 10분마다 따로 확인(받은 주소만 바로 탐색기로)', '거래소에서 내 지갑으로 보낸 출금이 전송 중이면 그 주소는 10분마다 확인', '내가 보내면(서명) 바로 지금 주기로 돌아와요'])
       + '<div class="su-actions"><button class="btn sm" data-su="tsheet">주소별 확인 주기 (' + fmtN(Object.keys(T.addrs || {}).length) + ')</button><button class="btn sm" data-su="tcheck">모두 지금 확인</button></div></div>';
   }
   function tierSheetHTML() {
     const rows = tierRows();
     return '<div class="su-bg su-tbg" role="dialog" aria-modal="true" aria-labelledby="suTierT"><div class="su-tsheet">'
       + '<div class="su-tsh"><h3 id="suTierT">주소별 확인 주기</h3><button class="btn sm" data-su="tclose" aria-label="닫기">닫기</button></div>'
-      + '<div class="cap su-p pvx">지금 주기 = 매 수집 주기 · 쉬는 주소 = 10분마다 잔고만 보고(그 점검은 탐색기 0콜) 바뀌면 그때 탐색기로 복구 · 토큰 입금은 10분마다 따로 확인(받은 주소만 바로 탐색기로) · 탐색기 받침 확인은 1시간마다</div>'
+      + '<div class="cap su-p pvx" title="쉬는 주소 = 10분마다 잔고만 보고(그 점검은 탐색기 0콜) 바뀌면 그때 탐색기로 복구 · 토큰 입금은 10분마다 따로 확인(받은 주소만 바로 탐색기로) · 탐색기 받침 확인은 1시간마다">지금 주기 = 매 수집 주기 · 쉬는 주소 = 10분마다 잔고 · 1시간마다 탐색기</div>'
       + '<div class="su-tlist">' + suPgSlice(rows, U.tierPg, suPgSize(20)).map(r => {
         const rest = r.pairs.some(p => p.t > 0 && !p.h), lf = Math.max(0, ...r.pairs.map(p => p.full || 0));
         return '<div class="su-trow"><div class="su-trm"><b class="pvl"' + (r.w.label ? ' data-pk="w"' : '') + '>' + esc(r.w.label ? suOwn(r.w.label) : '(이름 없음)') + '</b> <span class="num su-tad">' + esc(r.k.length > 14 ? r.k.slice(0, 6) + '…' + r.k.slice(-4) : r.k) + '</span>'
@@ -920,11 +946,13 @@
   function renderTierSheet() {
     if (U.tierSheet && U.tier) {
       if (!tierEl) { tierEl = document.createElement('div'); tierEl.id = 'suTier'; document.body.appendChild(tierEl); }
+      const tb0 = tierEl.querySelector('.su-bg'), tbY = tb0 ? tb0.scrollTop : 0;
       tierEl.innerHTML = tierSheetHTML();
+      if (tbY) { const tb1 = tierEl.querySelector('.su-bg'); if (tb1) tb1.scrollTop = tbY; }
       document.documentElement.classList.add('su-lock');
     } else if (tierEl) { tierEl.remove(); tierEl = null; if (!U.open && !U.perm) document.documentElement.classList.remove('su-lock'); }
   }
-  const CH_COLOR = { eth: '#7C9CFF', base: '#5B8DEF', arbitrum: '#7FC4E8', optimism: '#F25F5C', sol: '#4FC3A1', bsc: '#F2C661', linea: '#B49CFF', blast: '#E5D86A',
+  const CH_COLOR = { eth: 'var(--c1)', base: 'var(--downc)', arbitrum: '#7FC4E8', optimism: 'var(--upc)', sol: 'var(--c2)', bsc: 'var(--c3)', linea: 'var(--c4)', blast: '#E5D86A',
     zksync: '#8B93A4', scroll: '#E0B88A', polygon: '#A07CF0', gnosis: '#3E9C8C', robinhood: '#9AD57A', arc: '#6FA8DC' };
   const chColor = k => CH_COLOR[k] || ('hsl(' + (Array.from(String(k)).reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7)) + ' 45% 62%)');
   const CH_ST = { ok: ['ok', '정상'], filling: ['a', '옛 기록 채우는 중'], empty: ['g', '빈 지갑'], off: ['g', '꺼 둠'] };
@@ -1040,7 +1068,7 @@
       + (off.length > PS ? '<div class="su-chmore">' + suPgBar('chOffPg', U.chOffPg, off.length, PS, '개') + '</div>' : '') : '';
     const calls = C.callsDay != null ? '<div class="su-chfoot"><div class="su-chfh"><b>하루 예상 호출</b><span class="cap">켜진 체인 ' + fmtN(C.nOn) + '개 · 수집기 장부 기준</span><span class="sp"></span><span class="num">' + fmtN(C.callsDay) + '콜</span></div>'
       + (C.recCallsDay ? '<div class="cap">추천 ' + fmtN(C.nRec) + '개를 끄면 하루 약 ' + fmtN(C.recCallsDay) + '콜 줄어요</div>' : '') + '</div>' : '';
-    const swept = C.sweptAt ? '<div class="cap su-chnote">nonce = 하루 한 번 점검 기준(' + esc(ago(C.sweptAt)) + ') · 모르는 지갑(EOA 확인 전·점검 실패·이틀 넘은 값)이 하나라도 있거나, 최근 30일 안에 보낸 거래가 있거나, 옛 기록을 채우는 중이면 추천하지 않아요</div>' : '';
+    const swept = C.sweptAt ? '<div class="cap su-chnote" title="확인 못 한 지갑 = 일반 지갑인지 확인 전·점검 실패·이틀 넘은 값">보낸 거래 수 = 하루 한 번 점검(' + esc(ago(C.sweptAt)) + ') · 확인 못 한 지갑·최근 30일 보낸 거래·옛 기록 채우는 중이면 추천 안 해요</div>' : '';
     return '<section class="su-ch pvx" aria-label="체인별 조회">' + head + steps + colh + list + offH + calls + swept + '</section>';
   }
   function chApplyTxt(ap) {
@@ -1102,7 +1130,9 @@
     if (U.open) {
       const fresh = !wizEl;
       if (fresh) { U.retFocus = ae9 && ae9 !== document.body ? ae9 : null; wizEl = document.createElement('div'); wizEl.id = 'suWizard'; document.body.appendChild(wizEl); }
-      wizEl.innerHTML = wizardHTML();
+      const bg0 = !fresh && wizEl.__step === U.step ? wizEl.querySelector('.su-bg') : null, bgY = bg0 ? bg0.scrollTop : 0;
+      wizEl.innerHTML = wizardHTML(); wizEl.__step = U.step;
+      if (bgY) { const bg1 = wizEl.querySelector('.su-bg'); if (bg1) bg1.scrollTop = bgY; }
       document.documentElement.classList.add('su-lock');
       if (!keepFocus && !(U.perm)) {
         const back = wfk ? [...wizEl.querySelectorAll('[data-su="' + wfk[0] + '"]')].find(x => x.getAttribute('data-v') === wfk[1] && !x.disabled) : null;
@@ -1119,7 +1149,7 @@
     renderTierSheet();
     document.querySelectorAll('[data-su-in]').forEach(el => { const k = el.getAttribute('data-su-in'); if (U.d[k] != null) el.value = U.d[k]; });
     document.querySelectorAll('textarea[data-su-in]').forEach(autoGrow);
-    if (keepFocus) { const el = $('[data-su-in="' + keepFocus + '"]'); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (e) {  } } }
+    if (keepFocus) { const el = $('[data-su-in="' + keepFocus + '"]'); if (el) { el.focus({ preventScroll: true }); try { el.setSelectionRange(pos, pos); } catch (e) {  } } }
     if (U.perm) {
       if (!permEl) { permEl = document.createElement('div'); permEl.id = 'suPerm'; document.body.appendChild(permEl); }
       permEl.innerHTML = permModalHTML();
@@ -1210,7 +1240,7 @@
     chLoad() { U.chErr = ''; loadChains(true); },
     chPg(el) { const lb = el.getAttribute('aria-label'); U.chPg = Math.max(0, +el.getAttribute('data-v') || 0); fill(); suPgFocus('chPg', '#sx-wallets-chains', lb); },
     chOffPg(el) { const lb = el.getAttribute('aria-label'); U.chOffPg = Math.max(0, +el.getAttribute('data-v') || 0); fill(); suPgFocus('chOffPg', '#sx-wallets-chains .su-choh', lb); },
-    tPg(el) { const lb = el.getAttribute('aria-label'); U.tierPg = Math.max(0, +el.getAttribute('data-v') || 0); renderTierSheet(); const t = document.querySelector('#suTier .su-tsheet'); if (t) t.scrollTop = 0; suPgFocus('tPg', '#suTier .su-tsh', lb); },
+    tPg(el) { const lb = el.getAttribute('aria-label'); U.tierPg = Math.max(0, +el.getAttribute('data-v') || 0); renderTierSheet(); const t = document.querySelector('#suTier .su-bg'); if (t) t.scrollTop = 0; suPgFocus('tPg', '#suTier .su-tsh', lb); },
     chAutoTog() { if (U.ch) chAutoSet(U.ch.autoOffOn === false); },
     async wadd() {
       if (U.busy.wadd) return;
@@ -1435,6 +1465,7 @@
   }
   function stopPollIfIdle() { if (U.tg.phase !== 'wait') stopPoll(); }
 
+  document.addEventListener('toggle', ev => { const d = ev.target; if (d && d.getAttribute && d.hasAttribute('data-su-more')) U.more[d.getAttribute('data-su-more')] = !!d.open; }, true);
   document.addEventListener('click', ev => {
     const t = ev.target.closest && ev.target.closest('[data-su]');
     if (!t || !(t.closest('#suWizard') || t.closest('[data-su-scope]') || t.closest('#suPerm') || t.closest('#suTier'))) return;
@@ -1570,7 +1601,7 @@
     '.su-tnote{line-height:1.6}',
     '.su-tw{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)} .su-twh{line-height:1.5}',
     '.su-tsheet{width:640px;max-width:100%;background:var(--bg);border-radius:22px;box-shadow:var(--pop);padding:20px 22px}',
-    '.su-tsh{display:flex;justify-content:space-between;align-items:center;gap:10px} .su-tsh h3{margin:0;font-size:18px}',
+    '.su-tsh{display:flex;justify-content:space-between;align-items:center;gap:10px} .su-tsh h3{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em}',
     '.su-tlist{margin-top:8px;border-top:1px solid var(--line)}',
     '.su-trow{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)} .su-trm{min-width:0;flex:1} .su-tad{font-size:12.5px;color:var(--text2)}',
     '.su-ch{display:flex;flex-direction:column;min-width:0}',
@@ -1613,7 +1644,7 @@
     '.su-mda{display:block;margin-top:10px;font-size:12.5px;color:var(--text2)}',
     '@media (max-width:640px){.su-chr{grid-template-columns:minmax(0,1fr) auto 46px;column-gap:10px}.su-chsp,.su-chdash{display:none}.su-chcol .su-chc{font-size:11px;max-width:64px;white-space:normal;line-height:1.3}.su-chrec{flex-wrap:wrap}.su-chrt{white-space:normal}.su-chrm{flex-basis:100%;white-space:normal;padding-left:23px}.su-chr.rec{margin:4px -8px;padding:10px 8px}}',
     '.su-chiprow{display:flex;gap:6px;flex-wrap:wrap}',
-    '.su-chip{padding:6px 11px;border-radius:99px;font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--surface2);color:var(--text2)}',
+    '.su-chip{padding:6px 11px;border-radius:99px;font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--surface2);color:var(--text2);flex:none;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}',
     '.su-chip.on{background:var(--accentBg);color:var(--accent);border-color:transparent}',
     '.su-chip.on::before{content:"✓ ";font-weight:700}',
     '.su-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}',

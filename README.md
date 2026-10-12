@@ -7,7 +7,7 @@
 
 *English summary is at the bottom — [English](#english).*
 
-![대시보드 — 총자산·전일 대비 분해·총자산 곡선 (금액 랜덤값 모드)](docs/screenshots/01_dashboard_top.png)
+![대시보드 — 총자산·전일 대비 분해·총자산 곡선 · 금액은 랜덤값](docs/screenshots/01_dashboard_top.png)
 
 **목차** — [처음 시작하면 이것부터](#처음-시작하면-이것부터) · [화면 미리보기](#화면-미리보기) · [변경 내역(CHANGELOG)](CHANGELOG.md)
 
@@ -53,10 +53,10 @@
 
 | | |
 |---|---|
-| ![타임머신 — 곡선을 끌면 그날의 내 지갑(코인·보관처별 비중)과 '지금 그대로였다면'](docs/screenshots/30_wow_timemachine.png) | ![자금 흐름 지도 — 넣은 돈 → 거래소 → 지갑 → 지금 있는 곳(띠를 누르면 그 길로 간 전송 목록)](docs/screenshots/31_wow_flows.png) |
-| ![팔기 전 미리보기 — 팔 양을 움직이면 예상 실현손익·올해 누적 양도차익(주문은 넣지 않아요)](docs/screenshots/34_wow_sell_preview.png) | ![올해 결산 카드 — 실현·가장 많이 거래한 코인·오래 버틴 코인·수익 난 날, 비율만 보기·이미지 저장](docs/screenshots/32_wow_yearend.png) |
-| ![계획 지키기 점수 — 목표가·손절선(없으면 기본 규칙) 대비 판 매도를 판정, 월별 준수율](docs/screenshots/33_wow_planscore.png) | ![매매 습관 — 요일×시간대별 이익 난 매도 비율·보유 기간별 수익률·판 다음 날 더 오른 비율](docs/screenshots/37_journal_habits.png) |
-| ![지난 1년 하루 실현손익 잔디 — 가장 길게 이긴 흐름·조심할 요일](docs/screenshots/36_daily_heatmap.png) | ![전체 검색(⌘K · /) — 코인·주소·해시·날짜·금액, 필터 문법, '9월에 Base 에서 손해 본 거래' 같은 문장도](docs/screenshots/35_search_palette.png) |
+| ![타임머신 — 곡선을 끌면 그날의 내 지갑(코인·보관처별 비중)과 '지금 그대로였다면' · 금액은 랜덤값](docs/screenshots/30_wow_timemachine.png) | ![자금 흐름 지도 — 넣은 돈 → 거래소 → 지갑 → 지금 있는 곳(띠를 누르면 그 길로 간 전송 목록) · 금액은 랜덤값](docs/screenshots/31_wow_flows.png) |
+| ![팔기 전 미리보기 — 팔 양을 움직이면 예상 실현손익·올해 누적 양도차익(주문은 넣지 않아요) · 금액은 랜덤값](docs/screenshots/34_wow_sell_preview.png) | ![올해 결산 카드 — 실현·가장 많이 거래한 코인·오래 버틴 코인·수익 난 날, 비율만 보기·이미지 저장 · 금액은 랜덤값](docs/screenshots/32_wow_yearend.png) |
+| ![계획 지키기 점수 — 목표가·손절선(없으면 기본 규칙) 대비 판 매도를 판정, 월별 준수율](docs/screenshots/33_wow_planscore.png) | ![매매 습관 — 요일×시간대별 이익 난 매도 비율·보유 기간별 수익률·판 다음 날 더 오른 비율 · 금액은 랜덤값](docs/screenshots/37_journal_habits.png) |
+| ![지난 1년 하루 실현손익 잔디 — 가장 길게 이긴 흐름·조심할 요일](docs/screenshots/36_daily_heatmap.png) | ![전체 검색(⌘K · /) — 코인·주소·해시·날짜·금액, 필터 문법, '9월에 Base 에서 손해 본 거래' 같은 문장도 · 금액은 랜덤값](docs/screenshots/35_search_palette.png) |
 
 - 대시보드 총자산 곡선에 **'BTC 만 들고 있었다면' · '안 팔았다면'** 비교선을 겹쳐 볼 수 있어요(입출금은 빼고 같은 날 같은 돈으로 계산).
 - 문장 검색은 기본으로 **규칙 변환만** 씁니다(외부 호출 없음). `config.json` 의 `"wow": {"ask_llm": true}` 를 켜면 내 컴퓨터의 `claude` CLI 로도 바꿔 봅니다.
@@ -66,40 +66,41 @@
 
 | | |
 |---|---|
-| ![보관처 상세 — 보관처 줄을 누르면 열리는 서랍: 총자산 중 몇 %·코인 구성 링·최근 30일 들어옴/나감/이곳 매매 실현·체인별 비중·들어 있는 코인](docs/screenshots/42_venue_drawer.png) | ![차익 영수증 매수 차트 — 다른 지갑·체인을 거쳐 들어온 코인도 처음 산 곳(DEX 체결)까지 거슬러 매수 점을 찍어요](docs/screenshots/40_receipt_buy_chart.png) |
-| ![보낸 내역 한 주소 펼침 — 보낸 토큰·전송 목록(최근 200건 · 쪽 넘김)](docs/screenshots/43_outflow_expanded.png) | ![설정 › 표시 › 금액 랜덤값 — 배수 고정(이 기기에만 저장 · 켜진 동안 값은 안 보여요)](docs/screenshots/44_settings_display_rand.png) |
+| ![보관처 상세 — 보관처 줄을 누르면 열리는 서랍: 총자산 중 몇 %·코인 구성 링·최근 30일 들어옴/나감/이곳 매매 실현·체인별 비중·들어 있는 코인 · 금액은 랜덤값](docs/screenshots/42_venue_drawer.png) | ![차익 영수증 매수 차트 — 다른 지갑·체인을 거쳐 들어온 코인도 처음 산 곳(DEX 체결)까지 거슬러 매수 점을 찍어요 · 금액은 랜덤값](docs/screenshots/40_receipt_buy_chart.png) |
+| ![보낸 내역 한 주소 펼침 — 보낸 토큰·전송 목록(최근 200건 · 쪽 넘김) · 금액은 랜덤값](docs/screenshots/43_outflow_expanded.png) | ![설정 › 표시 › 금액 랜덤값 — 배수 고정(이 기기에만 저장 · 켜진 동안 값은 안 보여요)](docs/screenshots/44_settings_display_rand.png) |
 | ![지갑 자세히 — 체인별 확인 주기(지금 주기 · 하루 1회 · 빈 지갑 · 옛 기록 채우는 중)와 '지금 확인'](docs/screenshots/45_settings_wallet_tier.png) | ![확인 주기 · 예상 사용량 — 오래 안 쓴 주소는 덜 확인하고, 탐색기 하루 예상 호출은 공표 한도의 80% 까지(넘으면 간격을 자동으로 늘려요)](docs/screenshots/46_settings_wallet_tier_budget.png) |
+| ![지갑 추가 — 체인 칩 줄 EVM · Solana · Tron · Sui · TON · Bitcoin(Bitcoin 은 HD 지갑 또는 주소 하나)](docs/screenshots/60_settings_wallet_add_chains.png) | ![과거 데이터 더 가져오기 — 고른 시작 날짜가 거래소 보존 한도보다 옛날이면 거래소별 '… 이전 못 받아요'](docs/screenshots/61_settings_history_limits.png) |
+| ![변동 분해 시트 — 전일 대비 줄을 누르면 무엇 때문인지 · 금액은 랜덤값](docs/screenshots/62_change_breakdown_sheet.png) | ![수집 한계 — 거래소·체인별로 받는 범위와 못 받는 것(긴 이유는 접힘)](docs/screenshots/63_settings_collection_limits.png) |
 | ![체인별 조회 — 체인마다 조회 켜기·끄기 스위치, 보낸 거래가 지갑마다 10번 이하면 '끄는 걸 추천해요', 지갑 수에 맞춘 확인 주기·하루 예상 호출·꺼 둔 체인](docs/screenshots/48_settings_chains.png) | |
 
-이번 판(2026-10-12 (2) · 외부 검토 2건 버그 수정 · 톤코인 GRAM 개명 · 영수증 차트 봉 미리 받기)에 더해진 것 — 자세한 설명은 [CHANGELOG.md › 2026-10-12 (2)](CHANGELOG.md#2026-10-12-2--외부-검토-2건-버그-수정--톤코인-gram-개명--영수증-차트-봉-미리-받기) 에 있어요.
-사진은 다시 찍지 않았어요(이 판과 지난 네 판 2026-10-12 · 2026-10-11 (2) · 2026-10-11 · 2026-10-10 (3) 모두) — **새 체인 지갑 추가 화면 사진은 없어요.** 지금 화면은 사진과 이렇게 달라요:
-지갑 추가 화면 위에 체인 칩 줄 'EVM · Solana | Tron | Sui | TON | Bitcoin'(Bitcoin 을 고르면 'HD 지갑 | 주소 하나' · xpub 은 주소 형식 칩) · 설정 › 지갑·주소 목록에 새 체인 지갑 줄(이름 바꾸기·빼기) ·
-긴 목록(보유 코인·사이클·보낸 내역·미매칭·추적 지갑·NFT·값 없는 토큰 등)은 처음부터 10개(설정 › 화면 '목록 한 쪽'에서 20개)가 보이고 바로 아래 '‹ 이전 · 1–10 / N · 다음 ›'로 쪽을 넘겨요
-('N개 모두 보기'·접기 단계와 보유 '나머지 N종 · 합계' 같은 꼬리 요약 줄은 없어졌어요 · 사진 속 '50건씩 더 보기'·'모두 보기' 단추도 지금은 쪽 넘김) ·
-보유 코인은 스테이킹 하위 줄까지 줄 단위로 쪽을 나눠요(한 쪽 = 정확히 10/20줄 · 하위 줄이 있으면 쪽 바 단위 '줄') ·
-상태 패널 주의 줄마다 '닫기' · 접힌 '닫은 주의 N'(되살리기) · 미추적 체인 줄 옆 '지갑 추가 ›' · 옛 기록 채우기 알림 끝에 '… · 약 N분 남음 · Ankr로 받는 중' ·
-상태 패널에 새로 '<체인> 기초잔고 대사 보류'(6시간 넘게) · '수집 유닛 없음' ·
-설정 › 연결·키에 Chainnodes 칸 · QuickNode 는 멀티체인 주소 칸 하나에 요금제 칩 '1개월 체험'·거부되면 '키 거부됨' 줄 · 노드 키·Helius 칸의 '새로 받은 키' 칩은 없어졌어요 ·
-새 체인 지갑이 있으면 헬스·설정 수집원 칩·수집 한계 표에 그 체인 줄 · 입금 주소 줄에 체인 이름 · 보유·보관처 줄에 주소 꼴(T…·UQ…·bc1…)이나 'Bitcoin' · 보관처 서랍 머리 칩 '지갑 · BTC' 처럼 체인별 ·
-영수증 차트 출처 줄에 '… 봉 대신 …' · '오늘 몫 소진 — DEX 봉은 나중에 채움'(키 없는 GeckoTerminal 이 쉬는 동안 거래소 봉으로 먼저 그림) ·
-변동 분해 줄 끝에 › 가 붙고 누르면 무엇 때문인지 시트가 열려요 · 설정 '지갑·주소'는 목록 → 주소 관리 → 체인별 조회 → 확인 주기 순서 · 혼자 한 줄이던 단추는 관련 줄 끝으로 ·
-환율이 대체값·오래된 값이면 상태줄·설정 환율 줄에 '환율 대체값'·'환율 오래됨'(대체값이면 김프 숨김) · 거래소에서 빌린 코인이 그 거래소 잔고를 넘으면 보관처 줄 '빌린 몫'과 보유표 끝 '빌린 몫이 잔고를 넘은 코인 N종' ·
-업비트 잔고가 10분 넘게 늦으면 원화 줄에 '업비트 잔고 N분 전' · 코인 카드 세일 상자에 '결제 코인 사용' 줄 · 재계산 실패 알림·설정 › 과거 데이터에 원인 줄.
-위 '확인 주기'(45·46)·설정 › 연결·키(탐색기 키) 사진은 2026-10-10 판 화면이라, 지금은 확인 주기가 '지금 주기 · 10분 잔고 점검 · 1시간 탐색기 확인' 으로 짧아졌고 Ankr 칸에 '필수' 표시가 붙어요.
+이번 판(2026-10-12 (3) · 화면 다듬기 · 외부 검수 작은 수정 · AI 리뷰 전체 채우기)에 더해진 것 — 자세한 설명은 [CHANGELOG.md › 2026-10-12 (3)](CHANGELOG.md#2026-10-12-3--화면-다듬기--외부-검수-작은-수정--ai-리뷰-전체-채우기) 에 있어요.
+사진은 모두 이번 판 화면으로 새로 찍었어요(금액 랜덤값 모드 · 가짜 주소).
 
-- **업데이트** — [업데이트](#업데이트) 순서대로(전부 멈춘 뒤 한꺼번에 시작 → 끝에 `pm2 save`) · 재구축·데이터 개정 없음. 스팸 제톤으로 멈춘 TON 대사와 TON 시세 0 은 업데이트 뒤 저절로 풀려요 ·
-  '거래 상세 누락'으로 남은 새 체인 거래는 6시간 안에 다시 받아요 · 상태 패널에 '수집 유닛 없음'이 뜨면 `pm2 start ecosystem.config.js && pm2 save` · 영수증 차트 봉 미리 받기는 기본 꺼짐 —
-  [CHANGELOG › 2026-10-12 (2)](CHANGELOG.md#2026-10-12-2--외부-검토-2건-버그-수정--톤코인-gram-개명--영수증-차트-봉-미리-받기) 업데이트 상자 ·
-  2026-10-12 전 판에서 바로 올라오면 [그 판 업데이트 상자](CHANGELOG.md#2026-10-12--tron--sui--ton--bitcoin-지갑--외부-검토-버그-수정--주의-닫기--역할별-노드-선택--chainnodes)(새 유닛 4개 · 목록 한 쪽 10개 · QuickNode)도 보세요.
-- **TON · 톤코인** — 스팸 제톤(제공자가 무효로 표시한 것) 하나가 TON 대사 전체를 막던 것 · 첫 대사 중 들어온 입금을 기초 잔고가 지우던 것 ·
-  톤코인 거래소 티커 TON → GRAM(TON 체인 TON = GRAM 시세 · 화면 이름은 TON · 거래소 보유분은 [알아 둘 것](#알아-둘-것)).
-- **새 체인 수집** — Tron·Sui·TON·Bitcoin 의 못 받은 거래를 6시간마다 다시(종전엔 영구 누락·대사 영구 보류) · 상태 패널 '기초잔고 대사 보류'·'수집 유닛 없음' · 보유·보관처 줄 주소 꼴 ·
-  Bitcoin HD 범위(`gap_limit`·`range_end`)를 바꾸면 tj-btc·tj-core 가 저절로 다시 시작.
-- **EVM · 경고** — 데이터가 긴 스팸 Transfer 로그가 EVM·BNB Chain 수집을 멈추던 것 · 자동으로 끈 체인에 새 자금이 와도 '미추적 체인' 경고가 안 뜨던 것.
-- **화면** — 매매일지 '전체 이벤트' 넓은 기간(전체·120일 넘게)의 원화 입출금·스테이블 교환 줄 · 보유 코인 줄 단위 쪽 넘김 · $0.0001 미만 단가의 원화 표기 · 변동이 작은 총자산 곡선 눈금.
-- **시세 · 호출** — 코인게코의 1시간 넘은 값을 '방금 시세'로 안 씀 · 1분봉 실패 하나가 현재가를 30분 막던 것 · NFT 바닥가 헛호출 · 키 없는 GeckoTerminal 조절 공유 · 헬스 마진 부채 스테이블 14종.
-- **영수증 차트** — 봉 미리 받기(선택 · `review.chart_prewarm_per_day` · 기본 꺼짐 · `tj-review` 필요) · 키 없는 GeckoTerminal 이 쉬는 동안 같은 코인 거래소 봉으로 먼저 그리고 DEX 봉은 나중에 채움.
-- **백업 · 복구** — 일일 백업에 `chain_wallets`(Bitcoin 공개 디스크립터·탐색 범위 포함 · 다음 백업부터) · 원장 복원 도구 pm2 안내에 새 체인 유닛.
+최근 판에 더해진 것(이 README 다른 곳에 없는 것만):
+
+- **긴 목록 쪽 넘김** — 보유 코인·사이클·보낸 내역·미매칭 등은 처음부터 10개(설정 › 화면 · 표시 '목록 한 쪽'에서 20개) · 바로 아래 '‹ 이전 · 1–10 / N · 다음 ›' · 보유 코인은 스테이킹 하위 줄까지 줄 단위.
+- **상태 패널 주의 닫기** — 주의 줄마다 '닫기' · 접힌 '닫은 주의 N'에서 되살리기 · 미추적 체인 줄 옆 '지갑 추가 ›' · 새 체인 '기초잔고 대사 보류'·'수집 유닛 없음'.
+- **연결·키 알약 · 연결 시험** — 키 칸마다 [필수|선택]·[무료 …] 알약 + 한 줄(나머지는 '자세히') · 키를 저장하면 읽기 전용 호출 한 번으로 시험(거부된 키는 저장 안 함) · 노드 하루 몫 막대와 넘겨받는 순서.
+- **역할별 노드 선택** — 옛 상태·상세·내부 이동(trace)마다 노드의 실제 속도를 재서 고르고, 옛 기록 채우기가 너무 오래 걸리면 무료 키 노드를 먼저 · 알림 끝에 '약 N분 남음 · Ankr로 받는 중'.
+- **쉬는 지갑 확인** — 오래 안 쓴 주소는 10분마다 잔고만(탐색기 호출 없음) · 1시간마다 탐색기로 받침 확인 · 내가 보내면 바로 지금 주기로.
+- **거래소 빌린 몫** — 거래소 마진·대출 부채를 총자산에서 빼고, 빌린 코인이 그 거래소 잔고를 넘으면 보관처 줄 '빌린 몫'과 보유표 끝 줄.
+- **늦게 들어온 거래 → 지난 곡선** — 늦게 기록된 옛 거래도 지난날 곡선·기초 잔고에 다시 반영.
+- **영수증 차트 거래소 봉 먼저** — 키 없는 GeckoTerminal 이 쉬는 동안 같은 코인 거래소 봉으로 먼저 그리고 DEX 봉은 나중에 채움(출처 줄 '… 봉 대신 …').
+- **재계산 실패 원인** — 재계산 실패 알림·설정 › 데이터 · 수집 › 과거 데이터 더 가져오기에 원인 줄.
+- **새 체인 지갑 표시** — 보유·보관처 줄에 주소 꼴(T…·UQ…·bc1…)이나 'Bitcoin' · 보관처 서랍 칩 '지갑 · BTC' 처럼 체인별 · 입금 주소 줄에 체인 이름.
+- **환율·업비트 늦음 표시** — 환율이 대체값·오래된 값이면 상태줄·설정 환율 줄에 '환율 대체값'·'환율 오래됨'(대체값이면 김프 숨김) · 업비트 잔고가 10분 넘게 늦으면 원화 줄에 'N분 전'.
+
+
+- **업데이트** — [업데이트](#업데이트) 순서대로(전부 멈춘 뒤 한꺼번에 시작 → 끝에 `pm2 save`) · 재구축·데이터 개정 없음 · 첫 기동 때 `state/`·`state/inbox/` 는 본인만(0700), `.env` 는 0600 으로 조여져요
+  (다른 사용자 계정으로 이 폴더를 읽던 도구가 있으면 봇과 같은 사용자로) — [CHANGELOG › 2026-10-12 (3)](CHANGELOG.md#2026-10-12-3--화면-다듬기--외부-검수-작은-수정--ai-리뷰-전체-채우기) 업데이트 상자 ·
+  2026-10-12 (2) 전 판에서 바로 올라오면 [그 판 업데이트 상자](CHANGELOG.md#2026-10-12-2--외부-검토-2건-버그-수정--톤코인-gram-개명--영수증-차트-봉-미리-받기)(`pm2 save` · 새 체인 유닛)도 보세요.
+- **화면** — 글꼴·색·제목 통일(금액·%·개수 = 고정폭 숫자 · 한글 문장 = 본문 글꼴) · 긴 설명 → 한 줄 + '자세히'(설정 키 칸 [필수|선택]·[무료 …] 알약 · 노드 몫 막대 · 수집 한계 긴 이유 접힘) ·
+  설정 아래쪽 줄을 누르면 화면이 위로 튀던 것.
+- **과거 데이터 · AI 리뷰** — [과거 데이터 더 가져오기](#백필--재구축--재백필)에 거래소 보존 한도 경고 · 설정 › AI 리뷰 '전체 채우기'([AI 기능 켜기](#ai-기능-켜기--claude-cli-로그인)).
+- **외부 검수 작은 수정** — 영수증 AI 자동 평가(미룬 차트에선 거절 · 바뀐 보기로 재시도 안 함) · 인증 요청 리다이렉트 안 따라감 · 데이터 폴더·`.env` 권한 보정 ·
+  미리 받기 오늘 영수증·`bg=1` 직접 요청(지난 판 알려진 한계) · 꺼 둔 체인 로그 · Base 공개 노드 기본 속도.
+- 지난 판(2026-10-12 (2)): TON 스팸 제톤·첫 대사 중 입금 · 톤코인 GRAM 개명 · 새 체인 못 받은 거래 6시간마다 · 대사 보류·수집 유닛 없음 주의 · 긴 Transfer 로그 ·
+  자동으로 끈 체인 새 자금 경고 · 보유 줄 단위 쪽 넘김 · 코인게코 옛 값 · 백업 `chain_wallets` · 영수증 차트 봉 미리 받기 — [CHANGELOG.md › 2026-10-12 (2)](CHANGELOG.md#2026-10-12-2--외부-검토-2건-버그-수정--톤코인-gram-개명--영수증-차트-봉-미리-받기)
 - 지난 판(2026-10-12): Tron · Sui · TON · Bitcoin 지갑(읽기 전용) · 새 체인 대사는 모르면 보류 · '내 지갑' 재분류 이중 계상 · 세일 환불 원가·수동 참가금 처분 · 원장 복구 뒤 BNB Chain 다시 점검 ·
   헬스 주의 기준·닫기 · 목록 한 쪽 10/20개·'모두 보기' 없앰 · 같은 블록 안 거래 순서 · Chainnodes · 역할별 노드 선택 —
   [CHANGELOG.md › 2026-10-12](CHANGELOG.md#2026-10-12--tron--sui--ton--bitcoin-지갑--외부-검토-버그-수정--주의-닫기--역할별-노드-선택--chainnodes)
@@ -128,56 +129,56 @@
 
 ### 대시보드
 
-![대시보드 아래쪽 — 보유 코인 표(오늘 변동·7일 추이)](docs/screenshots/02_dashboard_below.png)
+![대시보드 아래쪽 — 보유 코인 표(오늘 변동·7일 추이 · 한 쪽 10줄 · 쪽 넘김) · 금액은 랜덤값](docs/screenshots/02_dashboard_below.png)
 
-![보유 코인 한 줄 펼침 — 보관 위치별 수량·원가](docs/screenshots/03_holding_row_expanded.png)
+![보유 코인 한 줄 펼침 — 보관 위치별 수량·원가 · 금액은 랜덤값](docs/screenshots/03_holding_row_expanded.png)
 
 | 총자산 곡선 1년 | 총자산 곡선 전체 |
 |---|---|
-| ![총자산 곡선 — 1년](docs/screenshots/15_long_curve_1y.png) | ![총자산 곡선 — 전체 기간](docs/screenshots/15_long_curve_all.png) |
+| ![총자산 곡선 — 1년 · 금액은 랜덤값](docs/screenshots/15_long_curve_1y.png) | ![총자산 곡선 — 전체 기간 · 금액은 랜덤값](docs/screenshots/15_long_curve_all.png) |
 
-![BTC 비교선 — 같은 날 같은 돈으로 BTC 만 샀다면 대비 내 실제 매매(입출금 뺀 수익률)](docs/screenshots/38_dash_bench.png)
+![BTC 비교선 — 같은 날 같은 돈으로 BTC 만 샀다면 대비 내 실제 매매(입출금 뺀 수익률) · 금액은 랜덤값](docs/screenshots/38_dash_bench.png)
 
 
 ### 매매일지 · 차익 영수증
 
-![매매일지 — 코인별 사이클(투입 → 매도)](docs/screenshots/04_journal_cycles.png)
+![매매일지 — 코인별 사이클(투입 → 매도) · 금액은 랜덤값](docs/screenshots/04_journal_cycles.png)
 
-![차익 영수증 — 매수·매도 한 차트, 코드 점수, AI 평가 상자](docs/screenshots/05_receipt_drawer.png)
+![차익 영수증 — 매수·매도 한 차트, 코드 점수, AI 평가 상자 · 금액은 랜덤값](docs/screenshots/05_receipt_drawer.png)
 
 | 매수·매도 타점 — NMR | 매수·매도 타점 — JPYC |
 |---|---|
-| ![차익 영수증 타점 차트 — NMR: 산 곳·판 곳을 시세 위에 점으로](docs/screenshots/50_receipt_chart_nmr.png) | ![차익 영수증 타점 차트 — JPYC: 산 곳·판 곳을 시세 위에 점으로](docs/screenshots/51_receipt_chart_jpyc.png) |
+| ![차익 영수증 타점 차트 — NMR: 산 곳·판 곳을 시세 위에 점으로 · 금액은 랜덤값](docs/screenshots/50_receipt_chart_nmr.png) | ![차익 영수증 타점 차트 — JPYC: 산 곳·판 곳을 시세 위에 점으로 · 금액은 랜덤값](docs/screenshots/51_receipt_chart_jpyc.png) |
 
-![선물 상세 — 포지션·펀딩·수수료](docs/screenshots/16_futures_drawer.png)
+![선물 상세 — 포지션·펀딩·수수료 · 금액은 랜덤값](docs/screenshots/16_futures_drawer.png)
 
 | 선물 영수증 — 데스크톱 | 선물 영수증 — 모바일 |
 |---|---|
-| ![선물 영수증 — 그날 청산한 포지션과 실제 시세 위 진입(▲▼)·청산(○), 수익·손실 구간](docs/screenshots/53_futures_receipt.png) | ![모바일 선물 영수증(아래에서 올라오는 시트)](docs/screenshots/54_mobile_futures_receipt.png) |
+| ![선물 영수증 — 그날 청산한 포지션과 실제 시세 위 진입(▲▼)·청산(○), 수익·손실 구간 · 금액은 랜덤값](docs/screenshots/53_futures_receipt.png) | ![모바일 선물 영수증(아래에서 올라오는 시트) · 금액은 랜덤값](docs/screenshots/54_mobile_futures_receipt.png) |
 
 ### 일별 기록 · 명세
 
-![일별 기록 — 6월 달력(날마다 실현손익)](docs/screenshots/52_daily_calendar_june.png)
+![일별 기록 — 6월 달력(날마다 실현손익) · 금액은 랜덤값](docs/screenshots/52_daily_calendar_june.png)
 
-![일별 기록 — 달력과 그날 카드(무엇이 움직였나·시세 코인별 분해·30분 체결 막대·매매 근거 메모)](docs/screenshots/06_daily_day_card.png)
+![일별 기록 — 10월 달력과 그날 카드(무엇이 움직였나·시세 코인별 분해·30분 체결 막대·매매 근거 메모) · 금액은 랜덤값](docs/screenshots/06_daily_day_card.png)
 
-![일별 기록 — 달력 아래 'M월 한눈에'(한 달 자산 변동 분해·실현 상위/하위 5)](docs/screenshots/06b_daily_month_glance.png)
+![일별 기록 — 달력 아래 'M월 한눈에'(한 달 자산 변동 분해·실현 상위/하위 5) · 금액은 랜덤값](docs/screenshots/06b_daily_month_glance.png)
 
-![일별 기록 — 그날의 기록 표](docs/screenshots/07_daily_records_table.png)
+![일별 기록 — 그날의 기록 표 · 금액은 랜덤값](docs/screenshots/07_daily_records_table.png)
 
-![최근 30일 마감 — 날마다 실현·USDT 종가·김프·총자산·AI 리뷰 표시](docs/screenshots/07b_daily_recent_30d.png)
+![최근 30일 마감 — 날마다 실현·USDT 종가·김프·총자산·AI 리뷰 표시 · 금액은 랜덤값](docs/screenshots/07b_daily_recent_30d.png)
 
 | 양도차익 명세 | 가스·수수료 |
 |---|---|
-| ![양도차익 명세(신고용 계산 보조)](docs/screenshots/08_tax_statement.png) | ![가스·수수료](docs/screenshots/09_gas_fees.png) |
+| ![양도차익 명세(신고용 계산 보조) · 금액은 랜덤값](docs/screenshots/08_tax_statement.png) | ![가스·수수료 · 금액은 랜덤값](docs/screenshots/09_gas_fees.png) |
 
 ### 보낸 내역 · 미매칭 · 기타 자산
 
-![보낸 내역 — 전송 중·브릿지 매칭·외부 전송 추적](docs/screenshots/10_outflows.png)
+![보낸 내역 — 전송 중·브릿지 매칭·외부 전송 추적 · 금액은 랜덤값](docs/screenshots/10_outflows.png)
 
-![미매칭 — 원가 미확인 유입·스팸 의심](docs/screenshots/11_unmatched.png)
+![미매칭 — 원가 미확인 유입·스팸 의심 · 금액은 랜덤값](docs/screenshots/11_unmatched.png)
 
-![기타 자산 — 부동산·주식·금·현금·부채(증권사 연결은 미검증 · 이 캡처는 자산 이름을 '종류 A' 로 바꿈)](docs/screenshots/12_other_assets.png)
+![기타 자산 — 부동산·주식·금·현금·부채(증권사 연결은 미검증 · 이 캡처는 자산 이름을 '종류 A' 로 바꿈) · 금액은 랜덤값](docs/screenshots/12_other_assets.png)
 
 ![기타 자산 › NFT — 추적 중·후보·스팸 접힘 (이 캡처는 컬렉션 이름·바닥가도 가림)](docs/screenshots/12b_other_assets_nft.png)
 
@@ -197,15 +198,15 @@
 
 | 대시보드 | 보유 코인 | 일별 기록 |
 |---|---|---|
-| ![모바일 대시보드](docs/screenshots/21_mobile_dashboard.png) | ![모바일 보유 코인](docs/screenshots/22_mobile_holdings.png) | ![모바일 일별 기록](docs/screenshots/23_mobile_daily.png) |
+| ![모바일 대시보드 · 금액은 랜덤값](docs/screenshots/21_mobile_dashboard.png) | ![모바일 보유 코인 · 금액은 랜덤값](docs/screenshots/22_mobile_holdings.png) | ![모바일 일별 기록 · 금액은 랜덤값](docs/screenshots/23_mobile_daily.png) |
 
 | 기타 자산 | 매매일지(아래 탭 막대) | 알림 설정 |
 |---|---|---|
-| ![모바일 기타 자산](docs/screenshots/24_mobile_other_assets.png) | ![모바일 매매일지와 아래 탭 막대](docs/screenshots/25_mobile_tabbar_journal.png) | ![모바일 알림 설정](docs/screenshots/26_mobile_settings_alerts.png) |
+| ![모바일 기타 자산 · 금액은 랜덤값](docs/screenshots/24_mobile_other_assets.png) | ![모바일 매매일지와 아래 탭 막대 · 금액은 랜덤값](docs/screenshots/25_mobile_tabbar_journal.png) | ![모바일 알림 설정](docs/screenshots/26_mobile_settings_alerts.png) |
 
 | 일별 — M월 한눈에 | 기타 자산 › NFT | 보관처 상세 |
 |---|---|---|
-| ![모바일 'M월 한눈에'](docs/screenshots/27_mobile_month_glance.png) | ![모바일 NFT(컬렉션 이름·바닥가 가림)](docs/screenshots/28_mobile_nft.png) | ![모바일 보관처 상세(아래에서 올라오는 시트)](docs/screenshots/47_mobile_venue_sheet.png) |
+| ![모바일 'M월 한눈에' · 금액은 랜덤값](docs/screenshots/27_mobile_month_glance.png) | ![모바일 NFT(컬렉션 이름·바닥가 가림)](docs/screenshots/28_mobile_nft.png) | ![모바일 보관처 상세(아래에서 올라오는 시트) · 금액은 랜덤값](docs/screenshots/47_mobile_venue_sheet.png) |
 
 | 체인별 조회 | | |
 |---|---|---|
@@ -462,6 +463,7 @@ AI 일별·주간 리뷰와 영수증 AI 매수·매도 평가는 **봇을 돌�
    - 봇이 이미 pm2 로 돌고 있으면 새 환경변수(토큰·API 키)는 그냥 재시작으론 안 들어갑니다 — 그 변수를 셸에 넣은 뒤 `pm2 restart tj-web --update-env`(리뷰가 켜져 있으면 `pm2 restart tj-review --update-env` 도) 하고 `pm2 save` 로 바뀐 환경을 저장합니다(안 하면 재부팅 때 예전 값으로 돌아갑니다).
 3. **확인** — 같은 사용자로 `claude -p "ok"` 가 대답하면 됩니다.
 4. **켜기** — 영수증 평가 = `config.json` 의 `review.buy_eval_daily_max`·`review.sell_eval_daily_max`(하루 상한, 예: 20) 뒤 `pm2 restart tj-web` · 일간·주간 AI 리뷰 = `TJ_ENABLE_REVIEW=1 pm2 start ecosystem.config.js --only tj-review`(이 값은 `.env` 가 아니라 pm2 를 띄우는 셸의 환경변수로 줘야 `tj-review` 유닛이 생깁니다) 뒤 `pm2 save`.
+   - 빠진 지난 날 리뷰(처음 켠 뒤 · 리뷰 방식이 바뀐 날)는 설정 › AI 리뷰 › **전체 채우기**로 한 번에 써요 — 확인창에 건수·걸리는 시간 · `tj-review` 가 1분 안에 배경에서 시작(Claude 사용량 · 예약 리뷰는 그대로).
 
 자주 막히는 것:
 - 영수증에 **"Claude 접근이 막혀 있어요"** — 로그인한 계정의 조직(팀·회사) 설정에서 Claude Code 사용이 꺼져 있습니다. 관리자에게 켜 달라고 하거나,
@@ -616,7 +618,8 @@ AI 일별·주간 리뷰와 영수증 AI 매수·매도 평가는 **봇을 돌�
 
 ## 백필 · 재구축 · 재백필
 
-- **백필**: 지갑을 추가하면 그 지갑의 과거(기본 5개월)를 자동으로 받습니다. 더 옛날이 필요하면 `config.json` 의 `backfill_since` 를 앞당기세요.
+- **백필**: 지갑을 추가하면 그 지갑의 과거(기본 5개월)를 자동으로 받습니다. 더 옛날이 필요하면 **설정 › 데이터 · 수집 › 과거 데이터 더 가져오기**에서 시작 날짜를 고르세요(`config.json` 의 `backfill_since` 를 앞당겨도 돼요).
+  거래소는 API 가 주는 기간까지만 받아요(OKX 체결 약 3개월 · 바이비트 2년 · 쿠코인 체결·바이낸스 선물 손익 약 1년 — 고른 날이 더 옛날이면 그 화면에 경고) — 거래소·체인별 한도 = [수집 한계](docs/COLLECTION_LIMITS.md).
 - **재구축(자동)**: 수집 시작일을 앞당긴 확장 백필이 끝나거나 수집 기간 밖의 옛 기록이 원장에 들어오면, `tj-core` 가 **별도 사본에서**
   분류·원가·손익을 다시 계산하고 검증을 통과한 경우에만 원장을 바꾼 뒤 스스로 다시 켭니다. 손으로 유닛을 멈출 일이 없습니다.
   실패하면 원장은 그대로 두고 6시간 → 12시간 → 24시간 뒤 다시 시도합니다(원인 = 디스크 공간·무결성 검사·포지션 게이트·손익 승인 대기 등 — 상태 패널에 표시 ·
@@ -929,8 +932,11 @@ Bitcoin 공개 디스크립터·xpub 로 돈을 옮길 수는 없지만 HD 지�
   - 원장 복원 도구로 백업을 되돌릴 때는 그 백업을 만든 설치의 수집 인박스(`state/inbox/`) 그대로 하세요 — 새로 설치했거나 인박스를 지우고 다시 만든(교체한) 뒤 옛 백업으로 복구하면
     같은 번호·길이의 파일을 원래 것으로 오인해 그 사이 거래 일부를 건너뛸 수 있고, 건너뛴 거래는 저절로 다시 오지 않아요 ·
     꼭 그래야 하면 유닛을 모두 멈추고 지금 인박스를 지우지 말고 다른 곳으로 옮겨 둔 뒤 빈 인박스로 복구 계획(미리보기)부터 확인하세요.
-  - 영수증 차트 봉 미리 받기(`review.chart_prewarm_per_day`)는 오늘 날짜 영수증을 한 번 받으면 '다 받음'으로 두고 다음 날 다시 받지 않아요 — 오늘 봉(아직 덜 닫힌 봉)은 그 영수증을 열 때 받아요(숫자 영향 없음 · 미리 받기 효율만) ·
-    로그인한 본인이 영수증 차트 주소에 `bg=1` 을 직접 붙여 부르면 미리 받기 하루 상한 밖에서 배경 받기가 돌 수 있어요(분당 1회·429 면 그날 멈춤 규칙은 그대로).
+  - 같은 블록·같은 초에 스테이블을 다른 스테이블로 판 뒤 다시 산 두 거래는 실행 순서가 아니라 해시 순으로 재생될 수 있어, 그 매도의 실현이 다음 매도 날로 넘어갈 수 있어요(최종 누계는 같음 · 드묾) — 저절로 풀리지 않아요.
+  - 영수증 서랍을 닫았다 다시 열면 그 사이 끝난 AI 평가·오류를 새로 불러오지 않을 수 있어요 — 새로고침하면 보여요.
+  - AI 리뷰 '전체 채우기' 확인창의 건수·걸리는 시간은 수동 몫만 세요 — 같은 기간의 자동 몫(곧 예약 리뷰가 쓸 날)도 함께 써서 실제 건수·Claude 사용량이 안내보다 많을 수 있어요.
+  - 인증 요청의 리다이렉트 차단은 거래소 조회·입금 주소·청산 감시·설정 연결 시험(키·서명 헤더)만이에요 — 코인게코·오픈시·TronGrid·toncenter 키 요청과 OKX DEX 시세 요청은 아직 리다이렉트를 따라가요(제공자가 다른 주소로 보낼 때만).
+  - 지갑 포트폴리오 보강(Rabby 공개 API)과 코인 로고(jsDelivr)는 기본 켜짐이에요(무엇이 나가는지 = [보안 · 데이터](#보안--데이터)) — 끄려면 `config.json` 의 `rabby.enabled: false` · 설정 › 화면 · 표시 › 토큰 로고.
   - Solana 에서 한 확인 주기(기본 5분 · 쉬는 지갑은 1시간 안팎) 안에 토큰 계정이 생기고 → 그 계정으로 입금 → 전부 팔고 계정을 닫으면 그 입금을 놓쳐 원가 없는 매도·음수 보유로 보일 수 있어요(빠른 봇 매매 지갑 · 보통 지갑은 드묾) ·
     스테이크 계정을 전액 인출로 닫으면 마지막 에포크 보상(봇이 꺼져 있던 동안 밀린 보상 포함)을 받지 않아 스테이킹 수익이 빠질 수 있어요 — 둘 다 저절로 풀리지 않아요 ·
     봇을 켜 둔 채 인출하면 빠지는 몫이 마지막 에포크 정도로 줄어요.
@@ -1019,7 +1025,10 @@ tracking and a review queue for unknown-cost inflows and spam tokens. The UI is 
 - **Borrowed coins:** `loan_short` in `config.json` — confirmed exchange-loan periods only, e.g. (synthetic) `[{"exchange": "okx", "asset": "ETH", "from": "YYYY-MM-DD", "to": "YYYY-MM-DD"}]` —
   gives coins borrowed and withdrawn (exchange balance pushed below zero, later refilled on the same exchange) a cost at the borrow-time price; the difference on refill is realized
   (a "대출 상환" row in the statement; display calculation only, with first-seen pricing on — the default; empty = off).
-- **Release notes:** what changed in each release (fixes from two independent external reviews — TON spam jettons no longer holding the whole
+- **Release notes:** what changed in each release (a screen polish pass — one number font, unified titles and colors, long explanations folded into one line
+  plus "자세히", no jump-to-top when tapping lower settings rows —, an exchange-retention warning when fetching older history, an AI review "fill all" button and small
+  external-review fixes — deferred receipt evaluations, no redirects on authenticated requests, tightened `state/` and `.env` permissions, prefetch of today's receipts
+  and `bg=1` limited to internal requests — on 2026-10-12 (3); fixes from two independent external reviews — TON spam jettons no longer holding the whole
   TON reconciliation, a TON deposit during the first reconciliation no longer cancelled, Toncoin priced from its new GRAM ticker, new-chain transactions retried
   every 6 hours, held-reconciliation and missing-unit health warnings, oversized Transfer log data, warnings for new funds on auto-disabled chains, journal KRW and
   conversion rows on wide ranges, holdings paged by row, CoinGecko price age and fewer NFT/GeckoTerminal calls — plus an optional receipt chart candle prefetch on
@@ -1063,7 +1072,7 @@ tracking and a review queue for unknown-cost inflows and spam tokens. The UI is 
   Settings › 표시 for consistent screenshots, never shown while the mode is on) with a "랜덤값" (random) watermark; explorer links are removed;
   hide mode (Shift+H) blurs amounts. Both are display-only. In either mode, names and notes you wrote yourself (wallet names, aliases,
   notes, Telegram bot/chat names) are shown as generic labels such as "지갑 A" / "메모", the Telegram link QR and code are hidden, and
-  recent searches are cleared. All screenshots above were taken in random-amount mode with fake addresses
+  recent searches are cleared. All screenshots above were taken in random-amount mode (amounts are randomized) with fake addresses
   and position numbers (NFT collection names and floors are also hidden in the NFT shots, and other-asset names are replaced with "<type> A").
 - **Login (on by default):** on first run, open http://127.0.0.1:8023/ on the machine itself to create a password (10+ characters);
   every device then needs it. Sessions last 30 days (7 days idle). Passwords are stored as PBKDF2-SHA256 hashes; 5 wrong tries in
@@ -1141,6 +1150,11 @@ tracking and a review queue for unknown-cost inflows and spam tokens. The UI is 
   show a larger holding until the next reconciliation (about 20 minutes by default). Restoring a ledger backup taken before new coins appeared with
   `tools/ledger_restore.py` can attach a manual per-coin cost to another coin — re-check manual costs after a restore.
   Toncoin held on an exchange that renamed it to GRAM can show a TON removal and a GRAM inflow with unknown cost (same coin — enter the cost yourself).
+  Two same-second stablecoin-only trades in one block (sell a stablecoin, then buy it back) may replay in hash order rather than execution order, moving that
+  sale's realized PnL to the next sale's day (final total unchanged); reopening a receipt drawer may not reload an AI evaluation or error that finished meanwhile
+  (reload the page); the "fill all" confirmation counts only the manual share (automatic days in the same range are written too, so the real count and Claude
+  usage can be higher); redirects are refused only for exchange/deposit/liquidation/connection-test requests — CoinGecko, OpenSea, TronGrid and toncenter key
+  requests and OKX DEX price requests still follow redirects. The Rabby portfolio fill and coin logos (jsDelivr) are on by default — turn them off with `rabby.enabled: false` and Settings › 화면 · 표시 › 토큰 로고.
   Not fixed yet: TON wallets already affected by the first-reconciliation race in the previous release, stablecoin cost carried at face value after CCA refunds or
   confirmed bridges, Solana same-slot order, maker rebates in realized PnL, Upbit/Bithumb stop orders filled within one cycle, a Bybit 403 rate limit treated as a
   6-hour key denial, internal outflows of contract wallets (7702/Safe) in third-party transactions on RPC chains (`chains.<chain>.rpc_trace: "all"`), no address or

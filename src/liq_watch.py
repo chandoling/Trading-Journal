@@ -209,7 +209,7 @@ def _http_default(method, url, headers=None, body=None, timeout=6.0):
     h.update(headers or {})
     req = urllib.request.Request(url, data=data, headers=h, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with common.auth_urlopen(req, timeout=timeout) as r:
             raw = r.read(MAX_BYTES + 1)
             if len(raw) > MAX_BYTES:
                 raise ValueError("응답 크기 초과")

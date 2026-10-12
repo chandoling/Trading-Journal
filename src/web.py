@@ -94,6 +94,8 @@ try:
 except Exception:
     review_progress = None
 REVIEW_PROGRESS_PATH = os.path.join(common.STATE_DIR, "review_progress.json")
+REVIEW_FILL_REQ_PATH = os.path.join(common.STATE_DIR, "review_fill_request.json")
+REVIEW_MANUAL_LOCK = os.path.join(common.STATE_DIR, "review_catchup_manual.lock")
 try:
     import perp_dex
     PERP_NAMES = dict(perp_dex.NAMES)
@@ -390,6 +392,25 @@ def leverage_api_payload(now=None):
 def review_pause_eff(prefs) -> dict:
     v = (prefs or {}).get("review_pause")
     return {"on": bool(isinstance(v, dict) and v.get("on") is True), "at": (v or {}).get("at") if isinstance(v, dict) else None}
+
+
+def review_fill_req_view():
+    try:
+        with open(REVIEW_FILL_REQ_PATH, "r", encoding="utf-8") as f9:
+            d9 = json.load(f9)
+    except (OSError, ValueError):
+        return None
+    return {"at": d9.get("at"), "since": d9.get("since")} if isinstance(d9, dict) else None
+
+
+def review_manual_busy() -> bool:
+    try:
+        with open(REVIEW_MANUAL_LOCK, "r", encoding="utf-8") as f9:
+            d9 = json.load(f9)
+        pid9, ts9 = int(d9.get("pid") or 0), float(d9.get("ts") or 0)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+    return pid9 > 0 and time.time() - ts9 <= 12 * 3600 and review_progress is not None and review_progress.pid_alive(pid9)
 
 
 def review_len_eff(prefs) -> dict:
@@ -4519,6 +4540,8 @@ class StateBuilder:
                 if k9 not in f:
                     raise ValueError("리뷰 칸 없음")
                 g[k9] = v9
+            if isinstance(f.get("reviewProgress"), dict):
+                g["reviewProgress"] = dict(f["reviewProgress"], fillReq=review_fill_req_view())
         if "fsnote" in kinds:
             fs9 = f.get("firstSeen")
             if not isinstance(fs9, dict):
@@ -12279,6 +12302,7 @@ class StateBuilder:
                 drv9 = {rv9["iso"]: rv9 for rv9 in reviews.values() if isinstance(rv9, dict) and rv9.get("iso") and isinstance(rv9.get("fp"), dict)}
                 review_prog = review_progress.view(REVIEW_PROGRESS_PATH, drv9, reviews_weekly, rdays9, today_kst.strftime("%Y-%m-%d"),
                                                    prefs.get("review_fill"))
+                review_prog["fillReq"] = review_fill_req_view()
             except Exception as e:
                 log.warning("AI 리뷰 진행 상황 읽기 실패(표시 생략): %s", e)
 
@@ -20829,6 +20853,9 @@ class Handler(BaseHTTPRequestHandler):
         a9, err = self._chart_args({k: v[0] for k, v in qs.items() if v}, fut_ok=True)
         if err:
             return self._send(400, err)
+        if a9.get("bg") and a9["side"] in ("sell", "buy") and not onboarding.DEMO and not (
+                login_auth._internal_ok(self) or (not login_auth.S.enabled and login_auth.direct_loopback(self))):
+            return self._send(403, {"ok": False, "error": "봉 미리 받기는 내부 요청만 허용합니다"})
         BUILDER.snapshot()
         body, st9 = BUILDER.chart_request(a9["date"], a9["sym"], a9["iv"], a9["after"], a9["venue"], side=a9["side"], bvenue=a9["bvenue"],
                                           bg=bool(a9.get("bg")) and a9["side"] in ("sell", "buy"))
@@ -20910,6 +20937,40 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, {"ok": False, "error": "없는 요청"})
         log.warning("정리 요청(%s): %s — %s", act, "접수" if ok9 else "거절", str(msg9)[:160])
         return self._send(200 if ok9 else 409, {"ok": bool(ok9), ("msg" if ok9 else "error"): msg9, "ops": ops_requests.status()})
+
+    def _review_fill_post(self, body: dict):
+        if not self._write_guard():
+            return None
+        now9 = time.time()
+        with _OPS_RL_LOCK:
+            while _OPS_RL and now9 - _OPS_RL[0] > 60:
+                _OPS_RL.popleft()
+            if len(_OPS_RL) >= 30:
+                return self._send(429, {"ok": False, "error": "요청이 너무 많아요 — 잠시 뒤 다시"})
+            _OPS_RL.append(now9)
+        if review_pause_eff(_bcall("prefs") or {}).get("on"):
+            return self._send(409, {"ok": False, "error": "AI 리뷰 자동 생성 멈춤 중이에요 — 멈춤을 풀고 다시 눌러 주세요"})
+        if review_manual_busy():
+            return self._send(409, {"ok": False, "error": "지난 리뷰를 이미 쓰는 중이에요 — 끝난 뒤 다시 눌러 주세요"})
+        if review_fill_req_view() is not None:
+            return self._send(200, {"ok": True, "msg": "이미 요청했어요 — 1분 안에 시작해요"})
+        try:
+            since9 = (_bcall("_backfill_since_view") or {}).get("windowStart")
+        except Exception:
+            since9 = None
+        if not (isinstance(since9, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", since9)):
+            m9 = float(((getattr(BUILDER, "cfg", None) or {}).get("backfill_months")) or 5)
+            since9 = datetime.fromtimestamp(now9 - m9 * 30 * 86400, KST).strftime("%Y-%m-%d")
+        try:
+            common.atomic_write_json(REVIEW_FILL_REQ_PATH, {"since": since9, "weekly": True, "at": int(now9), "by": "web"})
+            os.chmod(REVIEW_FILL_REQ_PATH, 0o600)
+        except OSError as e:
+            return self._send(500, {"ok": False, "error": "요청 파일을 쓰지 못했어요 · " + common.safe_err(str(e))[:120]})
+        log.warning("AI 리뷰 전체 채우기 요청 — %s 부터(tj-review 가 처리)", since9)
+        if not _bcall("mpatch", {"review"}) and hasattr(BUILDER, "lock"):
+            with BUILDER.lock:
+                BUILDER.cache = None
+        return self._send(200, {"ok": True, "msg": "요청했어요 — 1분 안에 쓰기 시작해요", "since": since9})
 
     def _health_ack_post(self, path: str, body: dict):
         if not self._write_guard():
@@ -21149,6 +21210,8 @@ class Handler(BaseHTTPRequestHandler):
         old = ST.find(a9["date"], sym9, fp9)
         if old and not force:
             return self._send(200, {"ok": True, "status": "done", "cached": True, "eval": StateBuilder._eval_rec(old, a9["side"])})
+        if body.get("auto") is True and (ch.get("autoEval") is False or ch.get("dexLater")):
+            return self._send(409, {"ok": False, "auto": False, "error": "이 차트는 자동 평가를 하지 않아요 — 버튼으로 직접 만들 수 있어요"})
         runner9 = None
         msym9 = memo_driven(a9["date"], sym9, inp, a9["side"])
         if msym9:
@@ -21446,6 +21509,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._wd_dest_register(body)
             if path in ("/api/health/ack", "/api/health/restore"):
                 return self._health_ack_post(path, body)
+            if path == "/api/review/fill":
+                return self._review_fill_post(body)
             if path.startswith("/api/ops/"):
                 return self._ops_post(path, body)
             PREFS_LOCK.acquire()

@@ -1,8 +1,10 @@
 """Shared paths, configuration loading and small utilities."""
 import json
 import urllib.parse
+import urllib.request
 import logging
 import os
+import stat
 import sys
 import tempfile
 
@@ -101,6 +103,23 @@ def read_capped(r, cap: int = None) -> bytes:
     if len(raw) > cap:
         raise ResponseTooLarge(f"응답 본문이 상한 {cap:,}바이트를 넘음 — 이 요청 실패")
     return raw
+
+
+class _NoAuthRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_AUTH_OPENER = []
+
+
+def auth_urlopen(req, timeout=20):
+    uo = urllib.request.urlopen
+    if getattr(uo, "__module__", None) != "urllib.request":
+        return uo(req, timeout=timeout)
+    if not _AUTH_OPENER:
+        _AUTH_OPENER.append(urllib.request.build_opener(_NoAuthRedirect()))
+    return _AUTH_OPENER[0].open(req, timeout=timeout)
 
 
 def read_env_file(path: str = None) -> dict:
@@ -785,7 +804,12 @@ def _drop_disabled_chains(cfg: dict) -> None:
             keep.append(w)
     cfg["wallets"] = keep
     cfg["_disabled_chains"] = off
-    logging.getLogger("tj").info("비활성 체인(설정 제외): %s — 켜려면 chains.<name>.enabled=true", ", ".join(off))
+    if _OFF_LOGGED[0] != off:
+        _OFF_LOGGED[0] = list(off)
+        logging.getLogger("tj").info("비활성 체인(설정 제외): %s — 켜려면 chains.<name>.enabled=true", ", ".join(off))
+
+
+_OFF_LOGGED = [None]
 
 
 _CFG_LOADED = [False]
@@ -885,8 +909,16 @@ def upbit_fresh_sec(cfg) -> int:
 
 
 def ensure_dirs() -> None:
-    os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
-    os.makedirs(INBOX_DIR, mode=0o700, exist_ok=True)
+    for d9 in (STATE_DIR, INBOX_DIR):
+        os.makedirs(d9, mode=0o700, exist_ok=True)
+        try:
+            st9 = os.lstat(d9)
+            if stat.S_ISDIR(st9.st_mode) and stat.S_IMODE(st9.st_mode) != 0o700 and (not hasattr(os, "getuid") or st9.st_uid == os.getuid()):
+                os.chmod(d9, 0o700)
+        except OSError:
+            pass
+    if not os.path.islink(ENV_PATH):
+        tighten_config_mode(ENV_PATH)
 
 
 def sqlite_ro_uri(path: str, immutable: bool = False) -> str:

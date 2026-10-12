@@ -455,8 +455,8 @@ html{--wfl5:var(--c5)} html:not([data-theme="light"]){--wfl5:#8C94A8}
       const don = '<div class="wcard wdon"><div class="wdon-c"><svg viewBox="0 0 220 220" role="img" aria-label="그날 보관처 비중"><circle cx="110" cy="110" r="' + R0 + '" fill="none" stroke="var(--surface3)" stroke-width="28"/>' + ring + '</svg>'
         + '<div class="wdon-t"><span>그날 총자산</span><b>' + M(thenV, { compact: true }) + '</b></div></div>'
         + '<div class="wleg">' + segs.map(s0 => '<span><i style="background:' + s0[2] + '"></i>' + esc(s0[0]) + ' ' + P(s0[1], 0) + '</span>').join('') + '</div>'
-        + '<div class="wnote" style="text-align:center">' + (d.src === 'hist' ? '장기 곡선과 같은 그날 마감가 · 그날 시세가 없는 코인은 합계에서 빼요' : '최근 30일 = 그날 마감 직전 화면 값 그대로') + ' · 보관처 = 그날까지 원장 기록'
-          + tmConf(d) + '</div></div>';
+        + (() => { const t9 = (d.src === 'hist' ? '장기 곡선과 같은 그날 마감가 · 그날 시세가 없는 코인은 합계에서 빼요' : '최근 30일 = 그날 마감 직전 화면 값 그대로') + ' · 보관처 = 그날까지 원장 기록', c9 = tmConf(d).replace(/^<br>/, '');
+          return '<div class="wnote" style="text-align:center" title="' + esc(t9) + '">' + (c9 || esc(t9)) + '</div>'; })() + '</div>';
       const locNmH = v9 => { const t9 = String(v9 || ''), i9 = t9.indexOf(' · '), a9 = window.__tjSearchApi;
         if (i9 < 0) return '<span class="pvl">' + esc(t9) + '</span>';
         const nm9 = t9.slice(i9 + 3);
@@ -867,7 +867,7 @@ html{--wfl5:var(--c5)} html:not([data-theme="light"]){--wfl5:#8C94A8}
         + '<div class="wsl-q">' + [[0.25, '25%'], [0.5, '50%'], [1, '전부']].map(o => '<button type="button" class="wbtn' + (Math.abs(c.f - o[0]) < 0.001 ? ' on' : '') + '" aria-pressed="' + (Math.abs(c.f - o[0]) < 0.001) + '" data-w="slQ" data-v="' + o[0] + '">' + o[1] + '</button>').join('') + '</div>'
         + '<div class="wsl-res"><div><div style="font-size:12.5px;color:var(--muted)">예상 실현손익</div><div class="big ' + cls(c.est) + '" id="wslBig">' + M(c.est, { sign: true }) + '</div><div class="wnote" id="wslSub">' + sellSub(c) + '</div></div>'
         + '<div style="height:1px;background:var(--line2)"></div><div class="wsl-kv"><span>올해 누적 양도차익(명세 기준)</span><span id="wslYtd">' + sellYtd(c) + '</span></div>'
-        + (num(g.unkQty) > 0 ? '<div class="wsl-kv"><span>원가 모르는 수량</span><span style="color:var(--ext)" id="wslUnk">' + x.q(c.unkSell) + ' ' + esc(g.sym) + ' 포함</span></div><div class="wnote">장부처럼 원가 아는 수량부터 판다고 계산했어요 — 원가 모르는 몫(아는 몫을 다 판 뒤)은 손익 0 · 미매칭에서 원가를 정하면 더 정확해져요</div>' : '') + '</div>'
+        + (num(g.unkQty) > 0 ? '<div class="wsl-kv"><span>원가 모르는 수량</span><span style="color:var(--ext)" id="wslUnk">' + x.q(c.unkSell) + ' ' + esc(g.sym) + ' 포함</span></div><div class="wnote" title="장부처럼 원가 아는 수량부터 판다고 계산했어요 — 원가 모르는 몫(아는 몫을 다 판 뒤)은 손익 0 · 미매칭에서 원가를 정하면 더 정확해져요">원가 아는 수량부터 판다고 계산 · 모르는 몫은 손익 0</div>' : '') + '</div>'
         + (c.pkey ? '<div class="wsl-plh"><span>목표가 · 손절선</span><span class="wseg" role="group" aria-label="입력 통화">' + [['KRW', '₩ 원화'], ['USD', '$ 달러']].map(o => '<button type="button" class="' + (cu === o[0] ? 'on' : '') + '" aria-pressed="' + (cu === o[0]) + '" data-w="slCur" data-v="' + o[0] + '"' + (o[0] === 'KRW' && !live ? ' disabled title="지금 환율을 아직 못 받았어요"' : '') + '>' + o[1] + '</button>').join('') + '</span></div>'
           + (live ? '' : '<div class="wnote">지금 환율을 아직 못 받아 원화 입력은 잠시 막아 뒀어요 — 달러로 넣어 주세요</div>')
           + '<div class="wsl-pl"><label>목표가 (' + uL + ')<input inputmode="decimal" id="wslT" data-pv value="' + esc(vT) + '" placeholder="' + (pv ? '숨김 중' : esc(slIn(c.price * 1.25, cu, rt))) + '" autocomplete="off"' + (pv ? ' disabled' : '') + '><span class="wsl-eq" id="wslTq">' + (pv ? '' : esc(slEq(vT, cu, rt))) + '</span></label>'

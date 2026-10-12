@@ -70,7 +70,7 @@
 .tjh-bg{position:fixed;inset:0;background:var(--dim);z-index:70}
 .tjh-panel{position:fixed;top:0;right:0;bottom:0;width:500px;max-width:100%;background:var(--bg);border-left:1px solid var(--line);z-index:71;overflow-y:auto;padding:22px 24px 40px;box-shadow:var(--pop)}
 .tjh-hd{display:flex;align-items:center;gap:10px;margin-bottom:6px}
-.tjh-hd h3{font-size:19px;font-weight:750;letter-spacing:-.02em}
+.tjh-hd h3{font-size:17px;font-weight:600;letter-spacing:-.01em}   /* s22 fx22a(D5): 패널 제목 = 17/600 */
 .tjh-sub{font-size:13px;color:var(--muted);margin-bottom:18px}
 .tjh-sec{margin-top:22px}
 .tjh-sec>.tt{font-size:13px;font-weight:700;color:var(--text2);margin-bottom:10px;display:flex;align-items:center;gap:8px}
@@ -104,12 +104,12 @@ html.tjh-lock,html.tjh-lock body{overflow:hidden} .tjh-panel{overscroll-behavior
 .tjh-res:last-child{border-bottom:0}
 .tjh-res .w{margin-left:auto;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .tjh-tg{display:flex;align-items:center;gap:10px;font-size:13.5px;padding:12px 14px;border-radius:12px;background:var(--surface);border:1px solid var(--line)}
-.tjh-pill{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.tjh-pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:6px;white-space:nowrap}
 .tjh-pill.ok{background:var(--okBg);color:var(--ok)} .tjh-pill.warn{background:var(--warnBg);color:var(--warn)} .tjh-pill.crit{background:var(--dangerBg);color:var(--danger)} .tjh-pill.unknown,.tjh-pill.g{background:var(--surface2);color:var(--muted)}
 /* ★screens1005★ 문제 = 한 줄(수준 점 · 제목 · 배지 하나) + 누르면 상세 · 정상 유닛 접기 · 과거 거래 불러오기(칩 고리 · 펼침 줄 · 패널 칸) */
 .tjh-inc{padding:0;border-left-width:4px;overflow:hidden}
 .tjh-ih{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:10px 14px;text-align:left;font-size:14px;color:var(--text)}
-.tjh-ih b{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tjh-ih b{font-weight:700;min-width:0;white-space:normal;overflow:visible;line-height:1.35}   /* s22 fx22a(cap#6): PC 도 줄바꿈(제목 끝 금액이 말줄임되던 것 — 폰 규칙과 같게) */
 .tjh-ifl{margin-top:6px;font-size:12px;line-height:1.5;color:var(--muted)}   /* uifix1010(L5): 받음 확인 한 줄 */
 .tjh-ih .sp{flex:1}
 .tjh-ih .tjh-pill{flex:none}
@@ -536,7 +536,7 @@ html.tjh-lock,html.tjh-lock body{overflow:hidden} .tjh-panel{overscroll-behavior
     const open = OPS.det.has(id) || /^dec:/.test(OPS.ask);
     const cap = [cf.length ? '다름 ' + cf.length : '', wt.length ? '다음 재계산 대기 ' + wt.length : ''].filter(Boolean).join(' · ');
     const lab = { conflict: '다름', pending: '채움 대기', resolve: '해결 대기' };
-    let b = '<div class="ob"><div class="note">토큰 자리수(소수점 자리)가 장부 저장값과 수집기 관측값이 다른 자산이에요. 저장값은 덮지 않았어요 — 관측값이 맞으면 ‘관측값으로 다시 기장’을 요청하세요. 지금 장부는 그대로이고, 다음 자동 재계산이 새 자리수로 다시 계산해요(손익이 바뀌면 재계산 승인에서 다시 물어봐요).</div><div class="rows">';
+    let b = '<div class="ob"><div class="note" title="저장값은 덮지 않았어요 — 지금 장부는 그대로이고, 다음 자동 재계산이 새 자리수로 다시 계산해요(손익이 바뀌면 재계산 승인에서 다시 물어봐요)">토큰 소수점 자리가 장부와 수집기 관측이 달라요 — 관측값이 맞으면 ‘관측값으로…’를 누르세요</div><div class="rows">';
     for (const x of its.slice(0, 12)) {
       const key = 'dec:' + x.aid, res = (z.results || {})[String(x.aid)];
       b += '<div class="r"><span class="k">' + esc(x.symbol || '?') + '</span><span class="v pvx">' + esc((x.chain || '') + ' · 저장 ' + (x.stored == null ? '없음' : x.stored) + ' → 관측 ' + x.seen) + (res && !res.ok ? ' · 거절: ' + esc(res.err || '') : '') + '</span><span class="n pvx">'

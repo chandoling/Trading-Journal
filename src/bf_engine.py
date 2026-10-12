@@ -379,7 +379,7 @@ HOST_POLICIES = {
     "rpc.mainnet.chain.robinhood.com": {"rate": 2.0, "burst": 2, "conc": 1},
     "robinhood.drpc.org": {"rate": 2.0, "burst": 2, "conc": 1, "call_rate": 6.0, "call_burst": 3,
                            "share": "drpc", "share_rate": 25.0, "share_burst": 50},
-    "mainnet.base.org": {"rate": 1.0, "burst": 1, "conc": 1, "call_rate": 5.0, "call_burst": 10},
+    "mainnet.base.org": {"rate": 0.5, "burst": 1, "conc": 1, "call_rate": 5.0, "call_burst": 10},
     "gateway.tenderly.co": {"rate": 2.0, "burst": 2, "conc": 1, "call_rate": 5.0, "call_burst": 10},
     "base.drpc.org": {"rate": 2.0, "burst": 2, "conc": 1, "call_rate": 6.0, "call_burst": 3, "share": "drpc", "share_rate": 25.0, "share_burst": 50},
     "rpc.mainnet.arc.io": {"rate": 2.0, "burst": 2, "conc": 1},
@@ -1613,12 +1613,14 @@ def _rpc_methods_of(data) -> list:
     return [None]
 
 
-def sol_open(req, timeout, method: str = None, deadline: float = None, sol: bool = False):
+def sol_open(req, timeout, method: str = None, deadline: float = None, sol: bool = False, no_redirect: bool = False):
     url = req.full_url if hasattr(req, "full_url") else str(req)
     _sol_meter_ensure()
     if sol or sol_meter_class(url) is not None:
         for m9 in ([method] if method else _rpc_methods_of(getattr(req, "data", None))):
             rpc_gap(url, m9, deadline, sol=sol)
+    if no_redirect:
+        return common.auth_urlopen(req, timeout=timeout)
     return urllib.request.urlopen(req, timeout=timeout)
 
 

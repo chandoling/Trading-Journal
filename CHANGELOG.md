@@ -3,6 +3,69 @@
 판마다 더해진 것과 바뀐 동작이에요. 지금 쓰는 법은 [README.md](README.md), 화면 사진은 README 의 '화면 미리보기'에 있어요.
 업데이트는 README [업데이트](README.md#업데이트) 순서대로(멈추기 → 백업 확인 → `git pull` → `bash tools/setup.sh` → `pm2 start ecosystem.config.js`) 하세요.
 
+## 2026-10-12 (3) — 화면 다듬기 · 외부 검수 작은 수정 · AI 리뷰 전체 채우기
+
+**화면 다듬기(글꼴·색·제목 통일 · 긴 설명 → 한 줄 + 자세히 · 설정 키 알약 · 수집 한계 접힘 · 누르면 위로 튀던 것) · 과거 데이터 가져오기 거래소 보존 한도 경고 · AI 리뷰 '전체 채우기' ·
+인증 요청 리다이렉트 안 따라감 · 데이터 폴더·`.env` 권한 보정 · 영수증 자동 평가 · 미리 받기 오늘 영수증·`bg=1` 직접 요청 · 비활성 체인 로그 · Base 공개 노드 기본 속도**
+
+지난 판(2026-10-12 (2)) 화면을 처음부터 다시 훑어 글꼴·색·제목을 하나로 맞추고 긴 설명문을 한 줄 + '자세히'로 줄인 판이에요(위치·배치·기능은 그대로).
+같은 판을 읽은 외부 검수가 찾은 작은 문제(영수증 자동 평가 · 인증 요청 리다이렉트 · 폴더 권한)와 지난 판 알려진 한계 두 줄(미리 받기)도
+재현 시험 먼저(고치기 전 실패 → 고친 뒤 통과) 가장 작은 수정으로 고쳤어요. 드문 경우는 이번엔 그대로 두고 아래 알려진 한계에 적었어요.
+README 사진은 이번 판 화면으로 모두 새로 찍었어요(새 사진 4장 — 지갑 추가 체인 칩 · 과거 데이터 경고 · 변동 분해 시트 · 수집 한계).
+
+> **업데이트** — README [업데이트](README.md#업데이트) 순서대로(멈추기 → 백업 확인 → `git pull` → `bash tools/setup.sh` → `pm2 start ecosystem.config.js` → `pm2 save` — 공통 모듈이 바뀌어 이번에도 모든 유닛).
+> 재구축·데이터 개정은 없어요(업데이트만으로는 원장 쓰기 없음).
+> 첫 기동 때 이미 있던 `state/`·`state/inbox/` 폴더가 본인만(0700), `.env` 가 본인만 읽고 쓰기(0600)로 조여져요(내 소유일 때만 · 하위 파일·심볼릭 링크는 그대로) —
+> 다른 사용자 계정으로 이 폴더를 읽던 도구(백업 스크립트 등)가 있으면 봇과 같은 사용자로 돌리세요.
+> 새로 생길 수 있는 것 — `state/review_fill_request.json`('전체 채우기' 요청 · `tj-review` 가 1분 안에 가져가 지움).
+
+- **화면 다듬기** — 금액·%·개수는 고정폭 숫자 글꼴, 한글 문장은 본문 글꼴로 통일(문장 안 금액 조각만 고정폭) · 시트·패널·카드 제목 크기와 굵기, 카드 모서리, 칩 굵기를 하나로 ·
+  곳곳에 직접 쓴 색을 테마 색으로(밝은 테마 포함) · 긴 설명문은 한 줄 + '자세히' — 설정 › 연결·키 칸마다 [필수|선택]·[무료 …] 알약 + 한 줄(나머지는 '자세히') ·
+  노드 하루 몫 막대와 넘겨받는 순서(① Chainnodes → ② QuickNode → ③ 기본 노드) · 수집 한계의 긴 이유는 접힘 · 매매일지 '명세 기준과 차이'·M월 한눈에·보낸 내역·알림 등의 설명도 한 줄 ·
+  화면 문구에서 설정 키·내부 용어를 빼고 쉬운 말로(원래 이름은 마우스를 올리면).
+- **누르면 화면이 위로 튀던 것** — 설정 › 연결·키 아래쪽 줄(거래소 키 등)을 누르면 위쪽 펼침이 접히며 누른 줄이 위로 밀리던 것, 설정 마법사·확인 주기 시트가 다시 그릴 때마다 맨 위로 가던 것 →
+  누른 줄 자리를 지켜요(화면 전환·단계 이동·누른 동작이 직접 굴리는 스크롤 — 달력 날짜 → 그날 카드 등 — 은 종전대로).
+- **과거 데이터 더 가져오기 — 거래소 보존 한도 경고** — 설정 › 데이터 · 수집 › 과거 데이터 더 가져오기에서 고른 시작 날짜가 연결한 거래소 API 가 주는 기간보다 옛날이면 거래소별 한 줄
+  (OKX 체결 = 3개월 전 달의 1일 · 바이비트 체결·손익 = 최근 730일 · 쿠코인 체결·바이낸스 선물 손익 = 약 1년 · Hyperliquid 체결 = 최근 1만 건)과 수집 한계 링크(경고만 — 가져오기는 그대로).
+- **AI 리뷰 — 전체 채우기** — 설정 › AI 리뷰에 수동 몫(빠진 옛 리뷰 · 리뷰 방식이 바뀐 날)이 있으면 '전체 채우기' 단추 — 확인창(건수·순서·Claude 사용량·걸리는 시간) 뒤 요청만 남기고,
+  `tj-review` 가 1분 안에 배경에서 일간 → 주간 순으로 써요(예약 리뷰를 막지 않음 · 시작한 날 앞까지만 · 도는 중 새 요청은 무시 · 자동 생성 멈춤을 따름 · 종전엔 명령줄 수동 실행만).
+- **영수증 AI 자동 평가** — DEX 봉을 나중에 채우려고 거래소 봉으로 먼저 그린 차트(자동 평가를 미루는 차트)에서도 자동 요청이 서버에서 새 평가를 돌릴 수 있던 것 → 그런 차트의 자동 요청은 거절(409 · 저장된 평가와 직접 누르는 단추는 그대로) ·
+  '진행 중' 뒤 자동 재시도가 그 사이 바뀐 보기로 다시 요청하던 것 → 처음 요청한 보기 그대로, 보기가 바뀌면 재시도 취소.
+- **보안 — 인증 요청 리다이렉트** — 키·서명 헤더를 붙이는 요청(업비트·해외 거래소 조회 · 입금 주소 · 청산 감시 · 설정 연결 시험)이 3xx 리다이렉트를 따라가 새 주소로 그 헤더를 그대로 보낼 수 있던 것 → 따라가지 않고 오류로(증권사 연결은 종전부터).
+- **보안 — 데이터 폴더·`.env` 권한** — 복사·복원으로 다른 사용자도 읽을 수 있게(755) 남은 `state/`·`state/inbox/` 와 그룹·다른 사용자 비트가 있는 `.env` 를 기동 때 본인만으로 조여요(종전엔 새로 만들 때만).
+- **지난 판 한계 고침 — 미리 받기** — 영수증 차트 봉 미리 받기가 오늘 날짜 영수증을 '다 받음'으로 굳혀 다음 날 다시 받지 않던 것 → 오늘 영수증은 다음 날부터 받아요 ·
+  영수증 차트 주소에 `bg=1` 을 직접 붙이면 하루 상한 밖에서 배경 받기가 돌던 것 → `bg=1` 은 같은 컴퓨터의 `tj-review` 내부 요청(로그인을 끈 설치는 이 컴퓨터에서 직접 온 요청)만, 그 밖은 403.
+- **그 밖** — 꺼 둔 체인 안내 로그('비활성 체인(설정 제외)')가 설정을 1분마다 다시 읽는 유닛에서 하루 수천 줄 쌓이던 것 → 목록이 바뀔 때만 ·
+  Base 공개 노드(`mainnet.base.org`) 기본 호출 속도 초당 1 → 0.5 요청(공표 없는 한도에서 429 가 잦았어요).
+
+**함께**
+
+- **문서** — README 사진 전부 새로(새 4장)·'최근 판에 더해진 것' 목록·'이번 판'·[백필 · 재구축](README.md#백필--재구축--재백필) 첫 줄(기본 5개월 · 과거 데이터 더 가져오기 · 거래소 보존 한도)·AI 리뷰 '전체 채우기'·알려진 한계·English.
+- **시험** — 공개 시험 추가: 인증 요청 리다이렉트 · 폴더·`.env` 권한 · 전체 채우기(예약 루프를 막지 않음·날짜 기준) · 영수증 자동 평가 거절·재시도 · 미리 받기 오늘 영수증·`bg=1` 내부만·비활성 체인 로그·Base 기본 속도 ·
+  긴 설명 한 줄 화면 — 전체 8,100건 넘게(파일 253개).
+
+**English · Screen polish, small external-review fixes, AI review "fill all"** — A design pass over the previous release: numbers (amounts, %, counts) use the monospaced
+font and Korean sentences the text font, sheet/panel/card titles, card corners and chip weights are unified, hard-coded colors became theme tokens, and long explanations
+became one line plus "자세히" (more) — key fields in Settings › 연결·키 now show required/optional and free/paid pills, node quota bars and the fallback order; the long
+reasons in the collection-limits view are folded. Tapping a lower row in Settings no longer jumps the page up. Settings › 데이터 · 수집 › 과거 데이터 더 가져오기 warns, per connected
+exchange, when the chosen start date is older than that exchange's API retention (warning only). Settings › AI 리뷰 has a "fill all" button for missing or outdated past reviews:
+it only writes a request file and `tj-review` runs it in a background thread within a minute (scheduled reviews are not blocked). Small external-review fixes: automatic receipt
+AI evaluations are refused (409) for charts whose evaluation is deferred, and a "running" retry keeps the original view (cancelled if the view changed); authenticated requests
+(Upbit, foreign exchanges, deposit addresses, liquidation watch, connection tests) no longer follow redirects; existing `state/` and `state/inbox/` are tightened to 0700 and
+`.env` to 0600 at start. Known limits of the previous release fixed: the candle prefetch no longer marks today's receipts done (they are fetched from the next day), and `bg=1`
+on the receipt chart URL is accepted only from `tj-review` on the same machine (403 otherwise). Also: the disabled-chain log line is written only when the list changes, and the
+default request rate for the public `mainnet.base.org` node is 0.5/s. All README screenshots were retaken. No rebuild and no data revision; stop everything, `pm2 start ecosystem.config.js`, then `pm2 save`.
+
+**알려진 한계(다음 판에)** — 자세한 설명·피하는 법은 README [알아 둘 것](README.md#알아-둘-것).
+
+- 같은 블록·같은 초에 스테이블을 다른 스테이블로 판 뒤 다시 산 두 거래는 실행 순서가 아니라 해시 순으로 재생될 수 있어, 그 매도의 실현이 다음 매도 날로 넘어갈 수 있어요(최종 누계는 같음).
+- 영수증 서랍을 닫았다 다시 열면 그 사이 끝난 AI 평가·오류를 새로 불러오지 않을 수 있어요 — 새로고침하면 보여요.
+- '전체 채우기' 확인창의 건수·걸리는 시간은 수동 몫만 세요 — 같은 기간의 자동 몫(곧 예약 리뷰가 쓸 날)도 함께 써서 실제 건수·Claude 사용량이 안내보다 많을 수 있어요.
+- 리다이렉트를 따라가지 않는 것은 위 거래소·연결 시험 요청만이에요 — 코인게코·오픈시·TronGrid·toncenter 키 요청과 OKX DEX 시세 요청은 아직 리다이렉트를 따라가요(제공자가 다른 주소로 보낼 때만 · 다음 판에).
+- 정책(그대로): 지갑 포트폴리오 보강(Rabby 공개 API)과 코인 로고(jsDelivr)는 기본 켜짐이에요 — 끄려면 `config.json` 의 `rabby.enabled: false` · 설정 › 화면 · 표시 › 토큰 로고([보안 · 데이터](README.md#보안--데이터)).
+- 지난 판 한계(TON 첫 대사 경합 피해분 · 거래소 톤코인 → GRAM 원가 · Tron·Sui 자릿수 모르는 스팸 · 스테이블 원가 승계 · Solana 같은 슬롯 순서 등)는 그대로예요 —
+  [2026-10-12 (2)](#2026-10-12-2--외부-검토-2건-버그-수정--톤코인-gram-개명--영수증-차트-봉-미리-받기) · 그중 미리 받기 두 줄은 이번에 고쳤어요.
+
 ## 2026-10-12 (2) — 외부 검토 2건 버그 수정 · 톤코인 GRAM 개명 · 영수증 차트 봉 미리 받기
 
 **TON 스팸 제톤 대사 보류 · TON 첫 대사 중 입금 상쇄 · 톤코인 GRAM 개명(TON 시세 0) · 새 체인 못 받은 거래 6시간마다 다시 · 대사 보류·수집 유닛 없음 주의 · EVM 긴 Transfer 로그 ·

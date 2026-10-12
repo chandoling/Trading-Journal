@@ -3,6 +3,8 @@ import sys
 
 sys.dont_write_bytecode = True
 import _harness as T
+import os
+os.environ["TJ_BUILD_PROC"] = "off"
 import _ingest
 from _ingest import check, Reader
 import _nonevm as N

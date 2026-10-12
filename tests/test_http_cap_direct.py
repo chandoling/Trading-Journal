@@ -60,7 +60,7 @@ def _uo(req, timeout=None, *a, **k):
 _uo._tj_test_mock = True
 
 
-def _sol_open(req, timeout, method=None, deadline=None, sol=False):
+def _sol_open(req, timeout, method=None, deadline=None, sol=False, no_redirect=False):
     CALLS.append(getattr(req, "full_url", req))
     return _Resp(BODY["v"])
 
@@ -167,7 +167,7 @@ case("S1", "sol_watch Rpc._call", lambda: sol_watch.Rpc._call(ss, ss.url, "getSl
 big_err = b'{"error":"' + b"q" * (200 * 1024) + b' max usage"}'
 
 
-def _sol_open_429(req, timeout, method=None, deadline=None, sol=False):
+def _sol_open_429(req, timeout, method=None, deadline=None, sol=False, no_redirect=False):
     raise urllib.error.HTTPError(req.full_url, 429, "busy", {}, _Fp(big_err))
 
 

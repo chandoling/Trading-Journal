@@ -127,7 +127,9 @@ const nV = +((txt(h).match(/(\d+)개를 모두 더하면/) || [])[1] || 0);
 chk(rowsOf(h) === 20 && /1–20 \/ \d+/.test(txt(h)) && /data-a="attdPg" data-v="1"/.test(h) && /data-v="-1" disabled/.test(h) && nV >= N0 - 1, '시세 25코인 + 몫: 첫 쪽 20개 · 1–20 / N · 이전 막힘 · 다음', { rows: rowsOf(h), nV, t: txt(h).slice(0, 200) });
 chk(/같아요/.test(h) && !/adck bad/.test(h), "합 확인 = '위 시세 줄과 같아요'", txt(h).match(/[^.]*모두 더하면[^<]*/));
 const amts = [...h.matchAll(/<b class="num [a-z]*">([^<]+)<\/b>/g)].map(x => x[1]);
-chk(/CAX/.test(h.split('class="adr"')[1] || '') && /\+2\.5%|2\.5%/.test(txt(h)) && /\$2 → \$/.test(txt(h)), '첫 줄 = 기여 가장 큰 코인 · 변동률 · 수량 · 전일가 → 그날가', txt(h).slice(0, 400));
+chk(/CAX/.test(h.split('class="adr"')[1] || '') && /\+2\.5%|2\.5%/.test(txt(h)) && /\$2(\.0+)? → \$/.test(txt(h))
+  // s22 fx22b(cap21 #9): 전일가 → 그날가 = 같은 소수 자릿수(종전 '$2 → $125.778')
+  && (m9 => !!m9 && (m9[1] || '').length === (m9[2] || '').length)(txt(h).match(/\$2(?:\.(\d+))? → \$[\d,]+(?:\.(\d+))?/)), '첫 줄 = 기여 가장 큰 코인 · 변동률 · 수량 · 전일가 → 그날가(같은 자릿수)', txt(h).slice(0, 400));
 A.attdPg({ dataset: { v: '1' } });
 h = F.attdSheet('d|10-10|mk');
 chk(rowsOf(h) === nV - 20 && /21–\d+ \/ \d+/.test(txt(h)) && /data-v="1" disabled/.test(h), '다음 쪽 = 나머지(21–N) · 다음 막힘', { rows: rowsOf(h), nV });
@@ -277,7 +279,8 @@ chk(JSON.stringify(F.attItems(a10)) === JSON.stringify(F.attItemsK(a10).map(x =>
         if (pg && !new RegExp((pg * 20 + 1) + '–').test(txt(h9))) break;
         const rows9 = h9.split('class="adr"').slice(1).map(x => (x.match(/<b class="num [a-z]*">([^<]+)<\/b>/) || [])[1]).filter(Boolean);
         rows9.forEach(x => { tot += units(x); });
-        head = units((h9.match(/<div class="adsum"><b class="num [a-z]*">([^<]+)<\/b>/) || [])[1] || '');
+        // s22 fx22b(cap21 #9): 큰 값 = 대시보드 줄과 같은 축약 · 전체 금액(센트·원)은 title — 합 비교는 title 값으로
+        head = units((h9.match(/<div class="adsum"><b class="num [a-z]*" title="([^"]+)">/) || [])[1] || '');
         ckv = units((h9.match(/모두 더하면 <b class="num [a-z]*">([^<]+)<\/b>/) || [])[1] || '');
         if (!/data-v="1"[^>]*>다음/.test(h9) || /data-v="1" disabled/.test(h9)) break;
       }

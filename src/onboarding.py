@@ -268,7 +268,7 @@ def _http(url: str, headers=None, data=None, method=None, timeout=12, sol=False)
     req = urllib.request.Request(url, headers=h, data=data, method=method)
     try:
         import bf_engine as _bfe9
-        with _bfe9.sol_open(req, timeout, sol=sol) as r:
+        with _bfe9.sol_open(req, timeout, sol=sol, no_redirect=True) as r:
             raw = r.read(1 << 20)
             code = r.status
     except urllib.error.HTTPError as e:

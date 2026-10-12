@@ -74,7 +74,7 @@ class Upbit:
         req = urllib.request.Request(url, headers={
             "Authorization": f"Bearer {_jwt(self.access, self.secret, query)}",
             "Accept": "application/json", "User-Agent": "tj-bot/0.1"})
-        with urllib.request.urlopen(req, timeout=20) as r:
+        with common.auth_urlopen(req, timeout=20) as r:
             rem = r.headers.get("Remaining-Req") or ""
             for part in rem.split(";"):
                 part = part.strip()
