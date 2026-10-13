@@ -849,15 +849,59 @@ def _daily_krw(daily, today_key):
     return daily
 
 
+FEE_TAX_EX = "수수료로 쓴 코인(처분)"
+
+
+def _tax_fee_key(r):
+    ex9 = str(r.get("ex") or "")
+    if r.get("tk") == "st" or not (ex9 == FEE_TAX_EX or ex9.startswith(FEE_TAX_EX + " · ")):
+        return None
+    return (str(r.get("sold") or ""), r.get("sym") or "?", ex9, r.get("tk") or "")
+
+
+def _tax_fee_merge(rows):
+    grp, out = {}, []
+    for r in rows:
+        k9 = _tax_fee_key(r)
+        if k9 is None:
+            out.append(r)
+            continue
+        g9 = grp.get(k9)
+        if g9 is None:
+            grp[k9] = g9 = [len(out), []]
+            out.append(None)
+        g9[1].append(r)
+    for pos9, rs9 in grp.values():
+        if len(rs9) == 1:
+            out[pos9] = rs9[0]
+            continue
+        v9 = lambda r, k: float(r.get("_" + k, r.get(k)) or 0)
+        qa, aa, da, fa = (sum(v9(r, k) for r in rs9) for k in ("qty", "acq", "disp", "fee"))
+        dk9 = sum(v9(r, "disp") * float(r.get("rate") or 0) for r in rs9)
+        rt9 = dk9 / da if da > 0 else float(rs9[0].get("rate") or 0)
+        m9 = {k: rs9[0][k] for k in ("sold", "sym", "ticker", "ex", "tk") if k in rs9[0]}
+        srcs9 = {r.get("rateSrc") for r in rs9}
+        m9.update({"qty": round(qa, 4), "acq": round(aa, 2), "disp": round(da, 2), "fee": round(fa, 2), "rate": round(rt9, 6),
+                   "rateSrc": srcs9.pop() if len(srcs9) == 1 else "mix", "n": len(rs9), "_qty": qa, "_acq": aa, "_disp": da, "_fee": fa})
+        ak9 = sum(float(r.get("_akr", r.get("akr"))) if r.get("_akr", r.get("akr")) is not None else v9(r, "acq") * float(r.get("rate") or 0) for r in rs9)
+        m9["_akr"], m9["akr"] = ak9, round(ak9)
+        out[pos9] = m9
+    return out
+
+
 def _tax_summary(rows, today):
-    acc = {}
+    acc, fee_days = {}, set()
     for r in rows:
         ym = acct_norm.month_of(r.get("sold"), today)
         if not ym:
             continue
         key = (ym, r.get("sym") or "?", r.get("ex") or "", r.get("tk") or "")
         a = acc.setdefault(key, [0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0])
-        a[0] += 1
+        fk9 = _tax_fee_key(r)
+        if fk9 is None or fk9 not in fee_days:
+            a[0] += 1
+            if fk9 is not None:
+                fee_days.add(fk9)
         acq9, disp9, fee9 = (float(r.get("_" + k9, r.get(k9)) or 0) for k9 in ("acq", "disp", "fee"))
         a[1] += float(r.get("qty") or 0); a[2] += acq9
         a[3] += disp9; a[4] += fee9
@@ -12822,7 +12866,7 @@ class StateBuilder:
             "dayMemos": day_memos9, "dayMemosOk": True, **({"dayMemosErr": day_memos_err9} if day_memos_err9 else {}),
             "pendings": pendings, "gasByChain": gas_list,
             "taxRows": [{k9: v9 for k9, v9 in r9.items() if not k9.startswith("_")}
-                         for r9 in sorted(tax_rows, key=lambda r9: str(r9.get("sold") or ""))[-100:]],
+                         for r9 in sorted(_tax_fee_merge(tax_rows), key=lambda r9: str(r9.get("sold") or ""))[-100:]],
             "extraEvents": extra_events_out, "extraEventsHidden": extra_events_hidden,
             "dayActs": day_acts,
             "extraEventsTotal": {"main": len(ev_main9), "wd": len(ev_wd9), "hidden": len(ev_hid9),
@@ -18406,6 +18450,7 @@ class StateBuilder:
         if sym and (sym.endswith(" 무기한") or sym == FUT_FEE_SYM):
             return self._tax_rows_fut(idx, ym, sym, offset)
         rows = [r for r in idx["tax"] if (not sym or (r.get("sym") or "?") == sym) and acct_norm.month_of(r.get("sold"), today9) == ym]
+        rows = _tax_fee_merge(rows)
         rows.sort(key=lambda r: str(r.get("sold") or ""), reverse=True)
         off9 = max(0, int(offset or 0))
         yms9 = idx.get("_taxYms")
