@@ -72,6 +72,9 @@ class Settings:
         self.session_days = _int(r.get("session_days"), 30, 1, 365)
         self.idle_days = min(_int(r.get("idle_days"), 7, 1, 365), self.session_days)
         self.secure = r.get("secure_cookie") is True
+        # 첫 비밀번호를 리버스 프록시·터널 너머에서도 만들 수 있게 할지.
+        # 기본은 꺼짐(upstream 그대로) — 켜면 setup_allowed() 가 HTTPS 프록시 요청도 받는다.
+        self.setup_via_proxy = r.get("setup_via_proxy") is True
 
 
 BEHIND_PROXY = False
@@ -89,6 +92,8 @@ def init(cfg: dict) -> Settings:
     BEHIND_PROXY = w.get("behind_proxy") is True
     if BEHIND_PROXY:
         log.info("web.behind_proxy = true — 모든 요청을 리버스 프록시 경유로 취급(첫 비밀번호는 tools/reset_password.py)")
+    if S.setup_via_proxy:
+        log.info("web.login.setup_via_proxy = true — 첫 비밀번호를 HTTPS 프록시 너머에서도 만들 수 있음(설정 코드는 그대로 필요)")
     if S.enabled:
         common.ensure_dirs()
         rotate_internal_token()
@@ -500,7 +505,20 @@ def _hostname(h) -> str:
 
 
 def setup_allowed(h) -> bool:
-    return direct_loopback(h) and _hostname(h) in ("127.0.0.1", "localhost", "::1")
+    """첫 비밀번호를 만들 수 있는 요청인가.
+
+    기본은 upstream 그대로 **이 컴퓨터에서 직접** 열었을 때만이다 — 프록시 뒤에서는
+    먼저 도착한 아무나가 비밀번호를 선점할 수 있기 때문이다.
+
+    `web.login.setup_via_proxy = true` 면 **HTTPS 프록시 경유도 받는다.** 앞단이 이미
+    인증을 거는 경우(여기서는 Cloudflare Access)를 위한 옵트인이다. 켜도 설정 코드
+    (`state/auth_setup_code`)는 그대로 필요하고 — 그건 서버 파일을 읽을 수 있어야 아는
+    값이다 — 틀린 코드에는 레이트 리밋이 걸린다. 평문 HTTP 는 받지 않는다: 설정 코드와
+    비밀번호가 그 연결로 지나간다.
+    """
+    if direct_loopback(h) and _hostname(h) in ("127.0.0.1", "localhost", "::1"):
+        return True
+    return bool(S.setup_via_proxy) and proxied_https(h)
 
 
 def _cookies(h, name=COOKIE):
@@ -800,7 +818,8 @@ def _setup(h, onboarding):
         return _json(h, 409, {"ok": False, "error": "이미 비밀번호가 있어요 — 로그인해 주세요" if st == "set"
                               else "인증 파일이 손상됐어요 — 서버에서 python3 tools/reset_password.py 로 다시 만드세요"})
     if not setup_allowed(h):
-        return _json(h, 403, {"ok": False, "error": "첫 비밀번호는 이 컴퓨터에서만 만들 수 있어요 — 서버에서 http://127.0.0.1:포트/login 으로 여세요"})
+        return _json(h, 403, {"ok": False, "error": "첫 비밀번호는 이 컴퓨터에서만 만들 수 있어요 — 서버에서 http://127.0.0.1:포트/login 으로 여세요"
+                              " (앞단에 인증이 있는 프록시·터널이면 config.json 의 web.login.setup_via_proxy 를 true 로 두고 tj-web 재시작)"})
     body = _read_json(h, pre_auth=True)
     if body is None:
         return _json(h, 400, {"ok": False, "error": "본문 형식 오류(JSON 객체, 4KB 이하)"})
