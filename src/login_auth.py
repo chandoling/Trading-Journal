@@ -78,6 +78,11 @@ class Settings:
 
 
 BEHIND_PROXY = False
+# 앞단이 인증을 끝내 주는 경우의 설정. `init()` 에서 config.json 의
+# web.trusted_proxy_auth 로 채운다. 기본은 꺼짐(upstream 동작 그대로).
+TRUSTED_PROXY = {"enabled": False, "header": "Cf-Access-Authenticated-User-Email",
+                 "jwt_header": "Cf-Access-Jwt-Assertion", "require_jwt": True, "allowed": set()}
+_TP_SEEN = set()
 S = Settings({"enabled": False})
 _LOCK = threading.RLock()
 _AUTH = {"sig": False, "rec": None, "err": None}
@@ -90,6 +95,7 @@ def init(cfg: dict) -> Settings:
     w = (cfg or {}).get("web") if isinstance((cfg or {}).get("web"), dict) else {}
     S = Settings(w.get("login", None))
     BEHIND_PROXY = w.get("behind_proxy") is True
+    _init_trusted_proxy(w.get("trusted_proxy_auth"))
     if BEHIND_PROXY:
         log.info("web.behind_proxy = true — 모든 요청을 리버스 프록시 경유로 취급(첫 비밀번호는 tools/reset_password.py)")
     if S.setup_via_proxy:
@@ -502,6 +508,67 @@ def _hostname(h) -> str:
     if x.startswith("["):
         return x[1:x.find("]")] if "]" in x else x
     return x.rsplit(":", 1)[0] if x.count(":") == 1 else x
+
+
+def _init_trusted_proxy(raw) -> None:
+    """`web.trusted_proxy_auth` 를 읽는다.
+
+    앞단(여기서는 Cloudflare Access)이 구글 로그인을 끝내고 신원 헤더를 붙여 주는
+    구성을 위한 것이다. 켜면 **앱 자체 비밀번호 없이** 그 신원을 믿는다.
+    """
+    global TRUSTED_PROXY, _TP_SEEN
+    r = raw if isinstance(raw, dict) else {}
+    emails = r.get("allowed_emails")
+    allowed = {str(e).strip().lower() for e in emails if str(e).strip()} if isinstance(emails, list) else set()
+    TRUSTED_PROXY = {
+        "enabled": r.get("enabled") is True,
+        "header": str(r.get("header") or "Cf-Access-Authenticated-User-Email"),
+        "jwt_header": str(r.get("jwt_header") or "Cf-Access-Jwt-Assertion"),
+        "require_jwt": r.get("require_jwt") is not False,
+        "allowed": allowed,
+    }
+    _TP_SEEN = set()
+    if TRUSTED_PROXY["enabled"]:
+        log.info("web.trusted_proxy_auth = true — 앞단 인증을 신뢰합니다(헤더 %s%s · 허용 이메일 %s)",
+                 TRUSTED_PROXY["header"],
+                 " + " + TRUSTED_PROXY["jwt_header"] if TRUSTED_PROXY["require_jwt"] else "",
+                 ", ".join(sorted(TRUSTED_PROXY["allowed"])) if TRUSTED_PROXY["allowed"] else "제한 없음(앞단 정책에 맡김)")
+
+
+def trusted_proxy_user(h):
+    """앞단이 인증을 끝냈다고 믿을 수 있는 요청이면 그 사용자, 아니면 None.
+
+    **이 판정이 통과하면 앱은 비밀번호를 묻지 않는다.** 그래서 조건을 좁게 둔다:
+
+    - `enabled` 가 켜져 있어야 한다 (기본 꺼짐).
+    - **HTTPS 프록시 경유**여야 한다. 평문은 안 받는다.
+    - 신원 헤더가 있어야 한다. Cloudflare Access 는 세션이 유효할 때만 origin 으로
+      요청을 보내고 그때 이 헤더를 **스스로 채운다** — 클라이언트가 보낸 같은 이름의
+      헤더는 덮어쓰인다. 그러니 헤더가 있다 = Access 를 통과했다는 뜻이고, Access 를
+      꺼 버리면 헤더가 사라져 이 문이 **닫히는 쪽으로** 틀어진다.
+    - `allowed_emails` 가 있으면 그 목록에 있어야 한다 (앞단 정책 위의 두 번째 자물쇠).
+
+    origin 은 루프백에만 떠 있어 터널 말고는 닿는 길이 없다는 것이 이 신뢰의 전제다.
+    """
+    t = TRUSTED_PROXY
+    if not t["enabled"]:
+        return None
+    if not proxied_https(h):
+        return None
+    who = (h.headers.get(t["header"]) or "").strip()
+    if not who:
+        return None
+    if t["require_jwt"] and not (h.headers.get(t["jwt_header"]) or "").strip():
+        return None
+    if t["allowed"] and who.lower() not in t["allowed"]:
+        if who.lower() not in _TP_SEEN:
+            _TP_SEEN.add(who.lower())
+            log.info("앞단 인증 사용자 거부(allowed_emails 밖): %s", who[:60])
+        return None
+    if who.lower() not in _TP_SEEN:
+        _TP_SEEN.add(who.lower())
+        log.info("앞단 인증 사용자 통과: %s", who[:60])
+    return who
 
 
 def setup_allowed(h) -> bool:
@@ -932,7 +999,9 @@ def _off(h, method, path, query) -> bool:
 
 def _refuse_proxied(h) -> bool:
     body = {"ok": False, "error": "proxy requires login",
-            "hint": "리버스 프록시·터널로 열려면 config.json 의 web.login 을 켜고(enabled true 또는 키 삭제) tj-web 을 다시 시작하세요"}
+            "hint": "리버스 프록시·터널로 열려면 config.json 의 web.login 을 켜고(enabled true 또는 키 삭제) tj-web 을 다시 시작하세요."
+                    " 앞단이 이미 로그인을 받는다면(예: Cloudflare Access) web.trusted_proxy_auth.enabled 를 true 로 두세요"
+                    " — 그 신원 헤더가 있는 HTTPS 요청만 통과합니다"}
     h.close_connection = True
     _json(h, 403, body)
     return True
@@ -941,10 +1010,14 @@ def _refuse_proxied(h) -> bool:
 def handle(h, method: str, path: str, query: str = "") -> bool:
     import onboarding
     if not S.enabled and not onboarding.DEMO and proxied(h):
-        try:
-            return _refuse_proxied(h)
-        except Exception:
-            return True
+        # 앱 로그인이 꺼져 있으면 upstream 은 프록시 요청을 전부 막는다 — 비밀번호도
+        # 없고 앞단도 없으면 터널이 곧 공개이기 때문이다. 앞단이 인증을 끝내 주는
+        # 구성(web.trusted_proxy_auth)에서는 그 신원을 확인하고 통과시킨다.
+        if trusted_proxy_user(h) is None:
+            try:
+                return _refuse_proxied(h)
+            except Exception:
+                return True
     if not S.enabled or onboarding.DEMO:
         try:
             return _off(h, method, path, query)

@@ -23079,8 +23079,17 @@ def _login_startup_warnings(cfg):
                 log.error("★웹 로그인이 꺼져 있어요 — %s(%s)에 닿는 누구나 대시보드를 보고 바꿀 수 있어요★ config.json web.login.enabled 를 "
                           "true 로(또는 키 삭제) 바꾸고 tj-web 을 다시 시작하세요", ext9, "테일넷" if tail9 else "사설망")
             else:
-                log.error("웹 로그인이 꺼져 있어요(web.login.enabled=false) — 이 컴퓨터의 다른 프로그램·사용자도 대시보드를 열 수 있어요. "
-                          "리버스 프록시·터널 요청은 거부합니다(403). 켜려면 enabled 를 true 로(또는 키 삭제)")
+                # 프록시 요청의 운명은 trusted_proxy_auth 가 가른다 — 꺼져 있으면 전부 403,
+                # 켜져 있으면 앞단 신원 헤더가 붙은 HTTPS 요청만 통과한다. 둘을 같은
+                # 문장으로 말하면 어느 쪽인지 모른 채 로그만 보고 판단하게 된다.
+                tp9 = web9.get("trusted_proxy_auth") if isinstance(web9.get("trusted_proxy_auth"), dict) else {}
+                if tp9.get("enabled") is True:
+                    log.warning("웹 로그인이 꺼져 있어요(web.login.enabled=false) — 앞단 인증을 신뢰하는 모드입니다. "
+                                "이 컴퓨터의 다른 프로그램·사용자는 비밀번호 없이 열 수 있고, 터널 요청은 "
+                                "web.trusted_proxy_auth 의 신원 헤더가 붙은 HTTPS 만 통과합니다")
+                else:
+                    log.error("웹 로그인이 꺼져 있어요(web.login.enabled=false) — 이 컴퓨터의 다른 프로그램·사용자도 대시보드를 열 수 있어요. "
+                              "리버스 프록시·터널 요청은 거부합니다(403). 켜려면 enabled 를 true 로(또는 키 삭제)")
         elif ext9 and not tail9 and not ((web9.get("login") or {}).get("secure_cookie") is True if isinstance(web9.get("login"), dict) else False):
             log.warning("웹 로그인 켜짐 · 사설 IP(%s) 바인딩은 HTTP 라 비밀번호·로그인 쿠키가 같은 네트워크에 암호화 없이 오가요 — "
                         "테일넷(bind \"tailscale\")이나 HTTPS 리버스 프록시를 쓰세요(bind=%s)", ext9, mode9)
